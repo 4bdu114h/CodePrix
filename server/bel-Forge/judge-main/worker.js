@@ -16,7 +16,7 @@ const LANGUAGE_CONFIGS = {
     },
     python: {
         extension: "py",
-        compile: null, 
+        compile: null,
         execute: (src) => `python3 "${src}"`,
     },
     java: {
@@ -48,12 +48,12 @@ async function executeCode(job) {
             exec(config.compile(sourceFile, outputFile), (compileError, compileStdout, compileStderr) => {
                 if (compileError) {
                     cleanup(execDir);
-                    
+
                     // Parse compilation error for line numbers
                     const parsedError = parseErrorLocation(compileStderr, language);
-                    
-                    return reject({ 
-                        error: "COMPILATION_ERROR", 
+
+                    return reject({
+                        error: "COMPILATION_ERROR",
                         message: "Code compilation failed",
                         details: {
                             stderr: compileStderr.trim(),
@@ -65,7 +65,7 @@ async function executeCode(job) {
                             parsedError: parsedError
                         }
                     });
-                }                console.log("Compilation Successful!");
+                } console.log("Compilation Successful!");
                 runCode(config.execute(outputFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
             });
         } else {
@@ -76,12 +76,12 @@ async function executeCode(job) {
 
 function runCode(command, execDir, input, timeLimit, memoryLimit, language, resolve, reject) {
     const startTime = Date.now();
-    
+
     // For Windows, use spawn to get better control over the process
     const args = command.split(' ');
     const executable = args[0].replace(/"/g, ''); // Remove quotes
     const processArgs = args.slice(1).map(arg => arg.replace(/"/g, ''));
-    
+
     const childProcess = spawn(executable, processArgs, {
         cwd: execDir,
         stdio: ['pipe', 'pipe', 'pipe']
@@ -91,6 +91,7 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
     let stderr = '';
     let killed = false;
     let memoryCheckInterval;
+    let peakMemoryKB = 0;
 
     // Monitor memory usage
     const memoryLimitBytes = memoryLimit * 1024 * 1024;
@@ -105,9 +106,11 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                             const memLine = lines[1].split(',');
                             if (memLine.length > 4) {
                                 const memStr = memLine[4].replace(/"/g, '').replace(/,/g, '').replace(' K', '');
-                                const memoryUsage = parseInt(memStr) * 1024; // Convert KB to bytes
-                                
-                                if (memoryUsage > memoryLimitBytes) {
+                                const memoryUsageBytes = parseInt(memStr, 10) * 1024;
+                                const memoryKB = Math.round(memoryUsageBytes / 1024);
+                                peakMemoryKB = Math.max(peakMemoryKB, memoryKB);
+
+                                if (memoryUsageBytes > memoryLimitBytes) {
                                     killed = true;
                                     clearInterval(memoryCheckInterval);
                                     childProcess.kill('SIGKILL');
@@ -116,9 +119,9 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                                         error: "MEMORY_LIMIT_EXCEEDED",
                                         message: `Memory limit of ${memoryLimit}MB exceeded`,
                                         details: {
-                                            memoryUsed: Math.round(memoryUsage / (1024 * 1024)),
+                                            memoryUsedKB: memoryKB,
                                             memoryLimit: memoryLimit,
-                                            timeTaken: `${Date.now() - startTime}ms`
+                                            executionTimeMs: Date.now() - startTime
                                         }
                                     });
                                 }
@@ -143,7 +146,8 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                 error: "TIME_LIMIT_EXCEEDED",
                 message: `Time limit of ${timeLimit}s exceeded`,
                 details: {
-                    timeTaken: `${Date.now() - startTime}ms`
+                    executionTimeMs: Date.now() - startTime,
+                    memoryUsedKB: peakMemoryKB
                 }
             });
         }
@@ -160,12 +164,11 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
 
     childProcess.on('close', (code, signal) => {
         if (killed) return; // Already handled
-        
+
         clearTimeout(timeoutHandle);
         clearInterval(memoryCheckInterval);
-        
-        const endTime = Date.now();
-        const executionTime = `${endTime - startTime}ms`;
+
+        const executionTimeMs = Date.now() - startTime;
         cleanup(execDir);
 
         if (code !== 0) {
@@ -175,7 +178,7 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
             let lineNumber = null;
             let column = null;
             let parsedError = null;
-            
+
             if (signal === 'SIGKILL') {
                 errorType = "MEMORY_LIMIT_EXCEEDED";
                 errorMessage = "Process was killed (likely memory limit exceeded)";
@@ -205,7 +208,8 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                     stdout: stdout.trim(),
                     exitCode: code,
                     signal: signal,
-                    timeTaken: executionTime,
+                    executionTimeMs,
+                    memoryUsedKB: peakMemoryKB,
                     lineNumber: lineNumber,
                     column: column,
                     parsedError: parsedError
@@ -214,9 +218,10 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
         }
 
         // Success case
-        resolve({ 
-            output: stdout.replace(/\r?\n/g, '\r\n'), 
-            timeTaken: executionTime,
+        resolve({
+            output: stdout.replace(/\r?\n/g, '\r\n'),
+            executionTimeMs,
+            memoryUsedKB: peakMemoryKB,
             status: "SUCCESS"
         });
     });
@@ -245,7 +250,7 @@ function cleanup(directory, attempts = 5) {
 function parseErrorLocation(stderr, language) {
     // Enhanced parsing logic for different languages and error types
     let lineColPattern, messagePattern, lineNumber, column, message;
-    
+
     // Language-specific error parsing
     switch (language) {
         case 'cpp':
@@ -261,7 +266,7 @@ function parseErrorLocation(stderr, language) {
                     message: gccMatch[3].trim()
                 };
             }
-            
+
             // Alternative GCC format without column
             const gccSimplePattern = /(?:.*[\\\/])?code\.[ch](?:pp)?:(\d+):\s*(?:error|warning):\s*(.+)/i;
             const gccSimpleMatch = stderr.match(gccSimplePattern);
@@ -273,7 +278,7 @@ function parseErrorLocation(stderr, language) {
                 };
             }
             break;
-            
+
         case 'python':
             // Python error format: File "filename", line N, in function
             const pythonLineMatch = stderr.match(/File ".*?code\.py", line (\d+)/);
@@ -286,7 +291,7 @@ function parseErrorLocation(stderr, language) {
                 };
             }
             break;
-            
+
         case 'java':
             // Java error format: filename.java:line: error: message
             const javaMatch = stderr.match(/code\.java:(\d+):\s*error:\s*(.+)/i);
@@ -309,7 +314,7 @@ function parseErrorLocation(stderr, language) {
             }
             break;
     }
-    
+
     // Fallback: try generic patterns
     const genericLineColPattern = /:(\d+):(\d+)/;
     const genericMessagePattern = /(?:error|Error):\s*(.+)/i;
@@ -324,7 +329,7 @@ function parseErrorLocation(stderr, language) {
             message: messageMatch ? messageMatch[1].trim() : null
         };
     }
-    
+
     // Try just line number
     const lineOnlyPattern = /line\s+(\d+)/i;
     const lineOnlyMatch = stderr.match(lineOnlyPattern);
@@ -340,62 +345,112 @@ function parseErrorLocation(stderr, language) {
 }
 
 /**
+ * Maps executeCode rejection errors to Submission schema status enums.
+ * @param {Object} errorResult - The rejection object from executeCode.
+ * @returns {string} One of the status enums: CE, TLE, MLE, RE, IE.
+ */
+function mapErrorToStatus(errorResult) {
+    if (errorResult.error === 'COMPILATION_ERROR') return 'CE';
+    if (errorResult.error === 'TIME_LIMIT_EXCEEDED') return 'TLE';
+    if (errorResult.error === 'MEMORY_LIMIT_EXCEEDED') return 'MLE';
+    if (errorResult.error === 'RUNTIME_ERROR') return 'RE';
+    if (errorResult.error === 'SEGMENTATION_FAULT') return 'RE';
+    if (errorResult.error === 'ABORT_SIGNAL') return 'RE';
+    if (errorResult.error === 'FLOATING_POINT_ERROR') return 'RE';
+    return 'IE';
+}
+
+/**
  * The default export executed by the Piscina worker thread.
- * Wraps the existing executeCode function and maps its output/errors
- * to the exact status enums defined in the Submission MongoDB schema.
+ * Iterates over every test case, executes the user's code with each input,
+ * compares stdout against the expected output, and returns the first failing verdict.
+ * If all test cases pass, returns AC.
+ *
  * @param {Object} payload - The structured clone payload from the main thread.
+ * @param {string} payload.submissionId - MongoDB _id of the Submission document.
+ * @param {string} payload.code - User's source code.
+ * @param {string} payload.language - One of: cpp, c, python, java, javascript.
+ * @param {number} payload.timeLimit - Time limit in milliseconds.
+ * @param {number} payload.memoryLimit - Memory limit in KB.
+ * @param {Array<{input: string, output: string}>} payload.testCases - Problem test cases.
  * @returns {Object} Strictly formatted result matching the Submission schema.
  */
 module.exports = async (payload) => {
-  const { submissionId, code, language, timeLimit, memoryLimit } = payload;
+    const { submissionId, code, language, timeLimit, memoryLimit, testCases } = payload;
 
-  try {
-    const executionResult = await executeCode({
-      code,
-      language,
-      input: payload.input || '',
-      timeLimit: (timeLimit || 2000) / 1000, // Convert ms to seconds (executeCode expects seconds)
-      memoryLimit: (memoryLimit || 256000) / 1024 // Convert KB to MB (executeCode expects MB)
-    });
+    // Fallback: if no test cases provided, run once with empty input (backwards-compat)
+    const cases = testCases && testCases.length > 0
+        ? testCases
+        : [{ input: '', output: '' }];
 
-    // Success path — map to AC
+    const timeLimitSec = (timeLimit || 2000) / 1000;   // executeCode expects seconds
+    const memLimitMB = (memoryLimit || 256000) / 1024; // executeCode expects MB
+
+    let maxTime = 0;
+    let maxMemory = 0;
+
+    for (let i = 0; i < cases.length; i++) {
+        const testInput = cases[i].input || '';
+        const expectedOut = cases[i].output || '';
+
+        try {
+            const result = await executeCode({
+                code,
+                language,
+                input: testInput,
+                timeLimit: timeLimitSec,
+                memoryLimit: memLimitMB,
+            });
+
+            const actualOut = (result.output || '').replace(/\r\n/g, '\n').trim();
+            const expected = expectedOut.replace(/\r\n/g, '\n').trim();
+
+            const elapsedMs = result.executionTimeMs ?? 0;
+            const memoryKB = result.memoryUsedKB ?? 0;
+            maxTime = Math.max(maxTime, elapsedMs);
+            maxMemory = Math.max(maxMemory, memoryKB);
+
+            // ——— THE CRITICAL COMPARISON ———
+            if (actualOut !== expected) {
+                return {
+                    submissionId,
+                    status: 'WA',
+                    executionTime: elapsedMs,
+                    memoryUsed: memoryKB,
+                    failedTestCase: i,
+                    logs: {
+                        stdout: actualOut.substring(0, 2048),
+                        stderr: '',
+                    },
+                };
+            }
+
+        } catch (errorResult) {
+            const details = errorResult.details || {};
+            const elapsedMs = details.executionTimeMs ?? 0;
+            const memoryKB = details.memoryUsedKB ?? 0;
+
+            return {
+                submissionId,
+                status: mapErrorToStatus(errorResult),
+                executionTime: elapsedMs,
+                memoryUsed: memoryKB,
+                failedTestCase: i,
+                logs: {
+                    stdout: (details.stdout || '').substring(0, 2048),
+                    stderr: (details.stderr || errorResult.message || '').substring(0, 2048),
+                },
+            };
+        }
+    }
+
+    // All test cases passed
     return {
-      submissionId,
-      status: 'AC',
-      executionTime: parseInt(executionResult.timeTaken) || 0,
-      memoryUsed: 0,
-      failedTestCase: null,
-      logs: {
-        stdout: (executionResult.output || '').substring(0, 2048),
-        stderr: ''
-      }
+        submissionId,
+        status: 'AC',
+        executionTime: maxTime,
+        memoryUsed: maxMemory,
+        failedTestCase: null,
+        logs: { stdout: '', stderr: '' },
     };
-
-  } catch (errorResult) {
-    // Map executeCode rejection errors to Submission schema status enums
-    let finalStatus = 'RE';
-
-    if (errorResult.error === 'COMPILATION_ERROR') finalStatus = 'CE';
-    else if (errorResult.error === 'TIME_LIMIT_EXCEEDED') finalStatus = 'TLE';
-    else if (errorResult.error === 'MEMORY_LIMIT_EXCEEDED') finalStatus = 'MLE';
-    else if (errorResult.error === 'RUNTIME_ERROR') finalStatus = 'RE';
-    else if (errorResult.error === 'SEGMENTATION_FAULT') finalStatus = 'RE';
-    else if (errorResult.error === 'ABORT_SIGNAL') finalStatus = 'RE';
-    else if (errorResult.error === 'FLOATING_POINT_ERROR') finalStatus = 'RE';
-    else finalStatus = 'IE';
-
-    const details = errorResult.details || {};
-
-    return {
-      submissionId,
-      status: finalStatus,
-      executionTime: parseInt(details.timeTaken) || 0,
-      memoryUsed: details.memoryUsed || 0,
-      failedTestCase: null,
-      logs: {
-        stdout: (details.stdout || '').substring(0, 2048),
-        stderr: (details.stderr || errorResult.message || '').substring(0, 2048)
-      }
-    };
-  }
 };
