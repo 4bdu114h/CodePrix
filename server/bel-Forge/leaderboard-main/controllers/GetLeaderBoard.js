@@ -4,7 +4,7 @@ module.exports = async (req, res) => {
     try {
         const { contest_link_code } = req.body;
         const leaderBoard = await LeaderBoard.find({contest_link_code});
-        if (!leaderBoard) {
+        if (!leaderBoard || leaderBoard.length === 0) {
             return res.status(404).json({ message: "LeaderBoard not found" });
         }
 

@@ -81,7 +81,7 @@ exports.createSubmission = async (req, res) => {
             status: result.status,
             'metrics.time': result.executionTime,
             'metrics.memory': result.memoryUsed,
-            failedTestCase: result.failedTestCase || null,
+            failedTestCase: result.failedTestCase ?? null,
             logs: result.logs
           }
         });

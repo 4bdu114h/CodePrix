@@ -16,7 +16,7 @@ const validator = {
       problem: { bsonType: 'objectId' },
       contest: { bsonType: ['objectId', 'null'] },
       language: {
-        enum: ['cpp', 'java', 'python', 'javascript'],
+        enum: ['cpp', 'java', 'python'],
         description: 'Must be one of the supported runtime environments.',
       },
       code: {
@@ -30,11 +30,11 @@ const validator = {
       metrics: {
         bsonType: 'object',
         properties: {
-          time: { bsonType: 'int', minimum: 0, maximum: 15000 },
-          memory: { bsonType: 'int', minimum: 0, maximum: 1024000 },
+          time: { bsonType: ['double', 'int', 'long'], minimum: 0, maximum: 15000, multipleOf: 1 },
+          memory: { bsonType: ['double', 'int', 'long'], minimum: 0, maximum: 1024000, multipleOf: 1 },
         },
       },
-      failedTestCase: { bsonType: ['int', 'null'], minimum: 0 },
+      failedTestCase: { bsonType: ['double', 'int', 'long', 'null'], minimum: 0, multipleOf: 1 },
       logs: {
         bsonType: 'object',
         properties: {
