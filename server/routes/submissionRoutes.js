@@ -1,61 +1,12 @@
 const express = require("express");
-const Submission = require("../models/Submission");
-const Problem = require("../models/Problem");
-const Contest = require("../models/Contest");
 const protect = require("../middleware/authMiddleware");
+const { createSubmission, getSubmission } = require("../controllers/submissionController");
+const Submission = require("../models/Submission");
 
 const router = express.Router();
 
-// Submit solution (protected)
-router.post("/", protect, async (req, res) => {
-    try {
-      const { problemId, code, language } = req.body;
-  
-      // 1️⃣ Check if problem exists
-      const problem = await Problem.findById(problemId);
-      if (!problem) {
-        return res.status(404).json({ message: "Problem not found" });
-      }
-  
-      // 2️⃣ Contest time check (ADD THIS PART)
-      const Contest = require("../models/Contest"); // add at top ideally
-  
-      const now = new Date();
-  
-      const activeContest = await Contest.findOne({
-        problems: problemId,
-        startTime: { $lte: now },
-        endTime: { $gte: now },
-      });
-  
-      if (!activeContest) {
-        return res.status(400).json({
-          message: "No active contest for this problem",
-        });
-      }
-  
-      // 3️⃣ Temporary evaluation logic (fake judge)
-      let verdict = "Wrong Answer";
-  
-      if (code.includes("return")) {
-        verdict = "Accepted";
-      }
-  
-      // 4️⃣ Save submission
-      const submission = await Submission.create({
-        user: req.user,
-        problem: problemId,
-        code,
-        language,
-        verdict,
-      });
-  
-      res.status(201).json(submission);
-  
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  });
+// Submit solution (protected) — delegates to bel-Forge via controller
+router.post("/", protect, createSubmission);
 
 // Get all submissions for logged-in user
 router.get("/my", protect, async (req, res) => {
@@ -68,5 +19,8 @@ router.get("/my", protect, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Get single submission by ID
+router.get("/:id", protect, getSubmission);
 
 module.exports = router;

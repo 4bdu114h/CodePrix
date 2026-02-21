@@ -1,4 +1,9 @@
 require("dotenv").config();
+
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is required. Add it to your .env file.");
+}
+
 const contestRoutes = require("./routes/contestRoutes");
 const submissionRoutes = require("./routes/submissionRoutes");
 const problemRoutes = require("./routes/problemRoutes");
