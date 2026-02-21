@@ -13,10 +13,6 @@ mongoose
   .then(() => console.log("MongoDB is connected successfully"))
   .catch((err) => console.error(err));
 
-app.listen(PORT, () => {
-    console.log(`Server is listening on port ${PORT}`);
-});
-
 const corsOptions = {
     origin: function (origin, callback) {
         // Allow requests with no origin (e.g., mobile apps, curl, server-to-server)
@@ -39,9 +35,9 @@ const corsOptions = {
             return callback(null, true);
         }
 
-        return callback(new Error("Not allowed by CORS"));
+        return callback(null, false);
     },
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 };
 
 app.use(cors(corsOptions));
@@ -50,3 +46,7 @@ app.use(express.json());
 
 app.use('/', UpdateLeaderBoardRoute);
 app.use('/', GetLeaderBoardRoute);
+
+app.listen(PORT, () => {
+    console.log(`Server is listening on port ${PORT}`);
+});

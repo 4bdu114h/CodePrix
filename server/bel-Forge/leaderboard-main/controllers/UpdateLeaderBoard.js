@@ -40,7 +40,10 @@ module.exports = async (req, res) => {
             }
 
             // Fetch all required users in a single query
-            const users = await User.find({ _id: { $in: Array.from(userIdSet) } });
+            const users = await User.find(
+                { _id: { $in: Array.from(userIdSet) } },
+                { email: 1, username: 1 } // only fetch required fields
+            ).lean();
 
             // Reinitialize maps and userIdSet to only include users that actually exist
             userIdSet = new Set();
@@ -103,7 +106,8 @@ module.exports = async (req, res) => {
                         rank_list: newLeaderBoardRankList,
                         last_updated: new Date(),
                     },
-                }
+                },
+                { runValidators: true, context: 'query' }
             );
         }
 
