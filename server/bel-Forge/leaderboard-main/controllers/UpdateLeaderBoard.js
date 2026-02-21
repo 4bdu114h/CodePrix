@@ -33,12 +33,22 @@ module.exports = async (req, res) => {
             let userIdToScoreMap = new Map();
 
             // Prefetch all users referenced in submissions to avoid N+1 queries
-            const authorIds = [...new Set(allSubmissions.map(s => s.author.toString()))];
+            const authorIds = [
+                ...new Set(
+                    allSubmissions
+                        .filter(s => s.author)
+                        .map(s => s.author.toString())
+                ),
+            ];
             const users = await User.find({ _id: { $in: authorIds } });
             const userById = new Map(users.map(u => [u._id.toString(), u]));
 
             for (const submission of allSubmissions) {
                 const { author, createdAt, status, problem } = submission;
+
+                // Skip submissions without an author to avoid null dereferences
+                if (!author) continue;
+
                 const problemId = problem.toString();
 
                 // normalize ObjectId → string

@@ -9,8 +9,9 @@ app.use(cors({ origin: "*" }));
 app.post("/execute", async (req, res) => {
   let { code, language, input, timeLimit, memoryLimit } = req.body;
 
+  // Defaults: timeLimit in seconds, memoryLimit in MB (API contract)
   if (timeLimit === undefined) {
-    timeLimit = 1;
+    timeLimit = 2;
   }
 
   if (memoryLimit === undefined) {
@@ -24,10 +25,13 @@ app.post("/execute", async (req, res) => {
     const result = await addJobToQueue({
       code,
       language,
-      input: input || '',
-      timeLimit,
-      memoryLimit,
-      testCases: [],
+      // Convert seconds → ms and MB → KB to match worker contract
+      timeLimit: timeLimit * 1000,
+      memoryLimit: memoryLimit * 1024,
+      // Pass input via a synthetic test case so the worker actually uses it.
+      // The empty expected output means the worker may return status 'WA', but
+      // WA is treated as success in this endpoint (output is returned via logs.stdout).
+      testCases: [{ input: input || '', output: '' }],
     });
     console.log("Execution Result:", result);
 

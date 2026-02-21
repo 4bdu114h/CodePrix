@@ -128,8 +128,8 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                             }
                         }
                     });
-                } else {
-                    // Linux/macOS: read VmRSS from /proc/<pid>/status
+                } else if (os.platform() === 'linux') {
+                    // Linux: read VmRSS from /proc/<pid>/status
                     const statusPath = `/proc/${childProcess.pid}/status`;
                     fs.readFile(statusPath, 'utf8', (err, statusContent) => {
                         if (err || killed) return; // Process may have already exited
