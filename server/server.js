@@ -1,4 +1,6 @@
 require("dotenv").config();
+const contestRoutes = require("./routes/contestRoutes");
+const submissionRoutes = require("./routes/submissionRoutes");
 const problemRoutes = require("./routes/problemRoutes");
 const userRoutes = require("./routes/userRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -18,6 +20,8 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/problems", problemRoutes);
+app.use("/api/submissions", submissionRoutes);
+app.use("/api/contests", contestRoutes);
 
 // Test route
 app.get("/", (req, res) => {
