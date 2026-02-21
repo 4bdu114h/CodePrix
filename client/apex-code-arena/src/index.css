@@ -1,0 +1,284 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Exo+2:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 45 30% 96%;
+    --foreground: 230 40% 8%;
+
+    --card: 45 40% 93%;
+    --card-foreground: 230 40% 8%;
+
+    --popover: 45 40% 93%;
+    --popover-foreground: 230 40% 8%;
+
+    --primary: 350 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 54 100% 50%;
+    --secondary-foreground: 230 40% 8%;
+
+    --muted: 45 20% 88%;
+    --muted-foreground: 230 15% 40%;
+
+    --accent: 224 38% 23%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 40% 8%;
+    --input: 230 40% 8%;
+    --ring: 350 100% 50%;
+
+    --radius: 0px;
+
+    --sidebar-background: 45 30% 94%;
+    --sidebar-foreground: 230 40% 8%;
+    --sidebar-primary: 350 100% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 45 20% 88%;
+    --sidebar-accent-foreground: 230 40% 8%;
+    --sidebar-border: 230 40% 8%;
+    --sidebar-ring: 350 100% 50%;
+
+    /* Custom F1 tokens */
+    --ferrari-red: 350 100% 50%;
+    --racing-yellow: 54 100% 50%;
+    --dark-bg-1: 224 38% 23%;
+    --dark-bg-2: 226 23% 52%;
+    --steel-blue: 226 23% 52%;
+    --gold: 43 100% 50%;
+    --silver: 0 0% 75%;
+    --bronze: 30 60% 45%;
+    --neo-green: 140 70% 45%;
+
+    /* Neo-brutalism shadows */
+    --shadow-brutal: 4px 4px 0px hsl(230 40% 8%);
+    --shadow-brutal-lg: 6px 6px 0px hsl(230 40% 8%);
+    --shadow-brutal-xl: 8px 8px 0px hsl(230 40% 8%);
+    --shadow-brutal-hover: 2px 2px 0px hsl(230 40% 8%);
+    --shadow-brutal-red: 4px 4px 0px hsl(350 100% 40%);
+    --shadow-brutal-yellow: 4px 4px 0px hsl(54 100% 35%);
+  }
+
+  .dark {
+    --background: 230 20% 15%;
+    --foreground: 45 15% 85%;
+
+    --card: 230 18% 18%;
+    --card-foreground: 45 15% 85%;
+
+    --popover: 230 18% 18%;
+    --popover-foreground: 45 15% 85%;
+
+    --primary: 350 80% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 54 70% 60%;
+    --secondary-foreground: 230 20% 15%;
+
+    --muted: 230 15% 25%;
+    --muted-foreground: 45 10% 60%;
+
+    --accent: 226 20% 45%;
+    --accent-foreground: 45 15% 85%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 45 10% 40%;
+    --input: 45 10% 40%;
+    --ring: 350 80% 55%;
+
+    --sidebar-background: 230 20% 17%;
+    --sidebar-foreground: 45 15% 85%;
+    --sidebar-primary: 350 80% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 15% 25%;
+    --sidebar-accent-foreground: 45 15% 85%;
+    --sidebar-border: 45 10% 40%;
+    --sidebar-ring: 350 80% 55%;
+
+    /* Custom colors adjusted for dark mode */
+    --neo-green: 140 50% 50%;
+    --steel-blue: 226 30% 55%;
+
+    /* Neo-brutalism shadows for dark mode - much softer */
+    --shadow-brutal: 3px 3px 0px hsl(45 8% 30%);
+    --shadow-brutal-lg: 4px 4px 0px hsl(45 8% 30%);
+    --shadow-brutal-xl: 5px 5px 0px hsl(45 8% 30%);
+    --shadow-brutal-hover: 2px 2px 0px hsl(45 8% 30%);
+    --shadow-brutal-red: 3px 3px 0px hsl(350 50% 35%);
+    --shadow-brutal-yellow: 3px 3px 0px hsl(54 40% 40%);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 500;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Orbitron', sans-serif;
+  }
+
+  .font-body {
+    font-family: 'Rajdhani', sans-serif;
+  }
+
+  .font-racing {
+    font-family: 'Exo 2', sans-serif;
+    font-style: italic;
+    font-weight: 700;
+  }
+
+  /* Neo-brutalism card */
+  .neo-card {
+    @apply border-2 border-foreground bg-card;
+    box-shadow: var(--shadow-brutal);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .neo-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-brutal-lg);
+  }
+
+  .neo-card:active {
+    transform: translate(2px, 2px);
+    box-shadow: var(--shadow-brutal-hover);
+  }
+
+  .neo-btn {
+    @apply border-2 border-foreground font-body font-bold uppercase tracking-wider;
+    box-shadow: var(--shadow-brutal);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+
+  .neo-btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-brutal-lg);
+  }
+
+  .neo-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+  }
+
+  .neo-btn-primary {
+    @apply neo-btn bg-primary text-primary-foreground;
+  }
+
+  .neo-btn-yellow {
+    @apply neo-btn bg-secondary text-secondary-foreground;
+  }
+
+  .neo-btn-dark {
+    @apply neo-btn bg-accent text-accent-foreground;
+  }
+
+  .neo-badge {
+    @apply border-2 border-foreground px-3 py-1 font-body text-xs font-bold uppercase tracking-wider;
+    box-shadow: 2px 2px 0px hsl(230 40% 8%);
+  }
+
+  /* Checkered pattern */
+  .checkered-bg {
+    background-image:
+      linear-gradient(45deg, hsl(230 40% 8% / 0.08) 25%, transparent 25%),
+      linear-gradient(-45deg, hsl(230 40% 8% / 0.08) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, hsl(230 40% 8% / 0.08) 75%),
+      linear-gradient(-45deg, transparent 75%, hsl(230 40% 8% / 0.08) 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  }
+
+  .checkered-stripe {
+    background: repeating-linear-gradient(
+      90deg,
+      hsl(230 40% 8%) 0px,
+      hsl(230 40% 8%) 12px,
+      hsl(0 0% 100%) 12px,
+      hsl(0 0% 100%) 24px
+    );
+  }
+
+  .racing-stripe-red {
+    background: repeating-linear-gradient(
+      -45deg,
+      hsl(350 100% 50%) 0px,
+      hsl(350 100% 50%) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+  }
+
+  .racing-stripe-yellow {
+    background: repeating-linear-gradient(
+      -45deg,
+      hsl(54 100% 50%) 0px,
+      hsl(54 100% 50%) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+  }
+
+  .skew-btn {
+    transform: skewX(-5deg);
+  }
+
+  .skew-btn > * {
+    transform: skewX(5deg);
+  }
+
+  /* Solution view styling */
+  .solution-view {
+    color: hsl(140 70% 35%) !important;
+    background-color: hsl(140 70% 95%) !important;
+  }
+
+  .dark .solution-view {
+    color: hsl(140 50% 65%) !important;
+    background-color: hsl(140 20% 20%) !important;
+  }
+
+  /* Reduce brightness of stat cards in dark mode */
+  .dark .bg-secondary {
+    background-color: hsl(54 40% 30%) !important;
+  }
+
+  .dark .bg-primary {
+    background-color: hsl(350 50% 35%) !important;
+  }
+
+  .dark .bg-neo-green {
+    background-color: hsl(140 40% 30%) !important;
+  }
+
+  .dark .bg-accent {
+    background-color: hsl(226 25% 35%) !important;
+  }
+
+  .dark .bg-steel-blue {
+    background-color: hsl(226 30% 35%) !important;
+  }
+}
