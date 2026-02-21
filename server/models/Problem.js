@@ -24,6 +24,14 @@ const problemSchema = new mongoose.Schema(
         output: String,
       },
     ],
+    timeLimit: {
+      type: Number,
+      default: 2000, // milliseconds
+    },
+    memoryLimit: {
+      type: Number,
+      default: 256000, // kilobytes (256 MB)
+    },
   },
   { timestamps: true }
 );
