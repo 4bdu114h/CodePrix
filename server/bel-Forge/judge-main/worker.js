@@ -7,22 +7,22 @@ const LANGUAGE_CONFIGS = {
     cpp: {
         extension: "cpp",
         compile: (src, out) => `g++ "${src}" -o "${out}"`,
-        execute: (out) => `"${out}"`,
+        execute: (out) => [out],
     },
     c: {
         extension: "c",
         compile: (src, out) => `gcc "${src}" -o "${out}"`,
-        execute: (out) => `"${out}"`,
+        execute: (out) => [out],
     },
     python: {
         extension: "py",
         compile: null,
-        execute: (src) => `python3 "${src}"`,
+        execute: (src) => ['python3', src],
     },
     java: {
         extension: "java",
         compile: (src) => `javac "${src}"`,
-        execute: (src) => `java -cp "${path.dirname(src)}" ${path.basename(src, ".java")}`,
+        execute: (src) => ['java', '-cp', path.dirname(src), path.basename(src, '.java')],
     }
 };
 
@@ -77,10 +77,8 @@ async function executeCode(job) {
 function runCode(command, execDir, input, timeLimit, memoryLimit, language, resolve, reject) {
     const startTime = Date.now();
 
-    // For Windows, use spawn to get better control over the process
-    const args = command.split(' ');
-    const executable = args[0].replace(/"/g, ''); // Remove quotes
-    const processArgs = args.slice(1).map(arg => arg.replace(/"/g, ''));
+    // command is an array: [executable, ...args]
+    const [executable, ...processArgs] = command;
 
     const childProcess = spawn(executable, processArgs, {
         cwd: execDir,
@@ -98,37 +96,65 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
     memoryCheckInterval = setInterval(() => {
         if (childProcess.pid && !killed) {
             try {
-                // Use tasklist to check memory usage on Windows
-                exec(`tasklist /FI "PID eq ${childProcess.pid}" /FO CSV`, (err, out) => {
-                    if (!err && out) {
-                        const lines = out.split('\n');
-                        if (lines.length > 1) {
-                            const memLine = lines[1].split(',');
-                            if (memLine.length > 4) {
-                                const memStr = memLine[4].replace(/"/g, '').replace(/,/g, '').replace(' K', '');
-                                const memoryUsageBytes = parseInt(memStr, 10) * 1024;
-                                const memoryKB = Math.round(memoryUsageBytes / 1024);
-                                peakMemoryKB = Math.max(peakMemoryKB, memoryKB);
+                if (os.platform() === 'win32') {
+                    // Windows: use tasklist to check memory usage
+                    exec(`tasklist /FI "PID eq ${childProcess.pid}" /FO CSV`, (err, out) => {
+                        if (!err && out) {
+                            const lines = out.split('\n');
+                            if (lines.length > 1) {
+                                const memLine = lines[1].split(',');
+                                if (memLine.length > 4) {
+                                    const memStr = memLine[4].replace(/"/g, '').replace(/,/g, '').replace(' K', '');
+                                    const memoryUsageBytes = parseInt(memStr, 10) * 1024;
+                                    const memoryKB = Math.round(memoryUsageBytes / 1024);
+                                    peakMemoryKB = Math.max(peakMemoryKB, memoryKB);
 
-                                if (memoryUsageBytes > memoryLimitBytes) {
-                                    killed = true;
-                                    clearInterval(memoryCheckInterval);
-                                    childProcess.kill('SIGKILL');
-                                    cleanup(execDir);
-                                    return reject({
-                                        error: "MEMORY_LIMIT_EXCEEDED",
-                                        message: `Memory limit of ${memoryLimit}MB exceeded`,
-                                        details: {
-                                            memoryUsedKB: memoryKB,
-                                            memoryLimit: memoryLimit,
-                                            executionTimeMs: Date.now() - startTime
-                                        }
-                                    });
+                                    if (memoryUsageBytes > memoryLimitBytes) {
+                                        killed = true;
+                                        clearInterval(memoryCheckInterval);
+                                        childProcess.kill('SIGKILL');
+                                        cleanup(execDir);
+                                        return reject({
+                                            error: "MEMORY_LIMIT_EXCEEDED",
+                                            message: `Memory limit of ${memoryLimit}MB exceeded`,
+                                            details: {
+                                                memoryUsedKB: memoryKB,
+                                                memoryLimit: memoryLimit,
+                                                executionTimeMs: Date.now() - startTime
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
-                    }
-                });
+                    });
+                } else {
+                    // Linux/macOS: read VmRSS from /proc/<pid>/status
+                    const statusPath = `/proc/${childProcess.pid}/status`;
+                    fs.readFile(statusPath, 'utf8', (err, statusContent) => {
+                        if (err || killed) return; // Process may have already exited
+                        const vmRssMatch = statusContent.match(/VmRSS:\s+(\d+)\s+kB/);
+                        if (vmRssMatch) {
+                            const memoryKB = parseInt(vmRssMatch[1], 10);
+                            peakMemoryKB = Math.max(peakMemoryKB, memoryKB);
+                            if (memoryKB * 1024 > memoryLimitBytes) {
+                                killed = true;
+                                clearInterval(memoryCheckInterval);
+                                childProcess.kill('SIGKILL');
+                                cleanup(execDir);
+                                return reject({
+                                    error: "MEMORY_LIMIT_EXCEEDED",
+                                    message: `Memory limit of ${memoryLimit}MB exceeded`,
+                                    details: {
+                                        memoryUsedKB: memoryKB,
+                                        memoryLimit: memoryLimit,
+                                        executionTimeMs: Date.now() - startTime
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
             } catch (e) {
                 // Ignore errors in memory checking
             }

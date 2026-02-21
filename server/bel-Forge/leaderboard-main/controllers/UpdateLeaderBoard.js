@@ -4,12 +4,13 @@ const User = require('../models/UserModel');
 
 module.exports = async (req, res) => {
     try {
-        const fetchtime = new Date(Date.now() - 10 * 60 * 1000); // now - 10 mins
+        const now = new Date();
+        const tenMinutesInMs = 10 * 60 * 1000;
 
-        // Find all leaderboards where: startTime < fetchtime < endTime + 10 mins
+        // Find active contests or contests that ended within the last 10 minutes
         const leaderboardsToUpdate = await LeaderBoard.find({
-            startTime: { $lt: fetchtime },
-            endTime: { $gt: new Date(fetchtime.getTime() - 10 * 60 * 1000) },
+            startTime: { $lte: now },
+            endTime: { $gte: new Date(now.getTime() - tenMinutesInMs) },
         });
 
         for (const leaderboard of leaderboardsToUpdate) {
@@ -31,6 +32,11 @@ module.exports = async (req, res) => {
             let userIdtoLatestACMap = new Map();
             let userIdToScoreMap = new Map();
 
+            // Prefetch all users referenced in submissions to avoid N+1 queries
+            const authorIds = [...new Set(allSubmissions.map(s => s.author.toString()))];
+            const users = await User.find({ _id: { $in: authorIds } });
+            const userById = new Map(users.map(u => [u._id.toString(), u]));
+
             for (const submission of allSubmissions) {
                 const { author, createdAt, status, problem } = submission;
                 const problemId = problem.toString();
@@ -39,7 +45,7 @@ module.exports = async (req, res) => {
                 const authorId = author.toString();
 
                 if (!userIdSet.has(authorId)) {
-                    const user = await User.findById(authorId);
+                    const user = userById.get(authorId);
                     if (!user) continue;
 
                     userIdSet.add(authorId);

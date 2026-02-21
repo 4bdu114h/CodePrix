@@ -5,10 +5,10 @@ const app = express();
 require("dotenv").config();
 const UpdateLeaderBoardRoute = require("./routes/UpdateLeaderBoard");
 const GetLeaderBoardRoute = require("./routes/GetLeaderBoard");
-const { MONGO_URL, PORT } = process.env;
+const { MONGO_URI, PORT } = process.env;
 
 mongoose
-  .connect(MONGO_URL, {
+  .connect(MONGO_URI, {
   })
   .then(() => console.log("MongoDB is connected successfully"))
   .catch((err) => console.error(err));
