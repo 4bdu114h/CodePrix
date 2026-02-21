@@ -3,8 +3,14 @@ const LeaderBoard = require('../models/LeaderBoardModel');
 module.exports = async (req, res) => {
     try {
         const { contest_link_code } = req.body;
-        const leaderBoard = await LeaderBoard.find({contest_link_code});
-        if (!leaderBoard) {
+
+        // Validate contest_link_code to prevent NoSQL injection and ensure safe format
+        if (typeof contest_link_code !== 'string' || !/^[A-Za-z0-9_-]+$/.test(contest_link_code)) {
+            return res.status(400).json({ message: "Invalid contest_link_code format" });
+        }
+
+        const leaderBoard = await LeaderBoard.find({ contest_link_code });
+        if (!leaderBoard || leaderBoard.length === 0) {
             return res.status(404).json({ message: "LeaderBoard not found" });
         }
 

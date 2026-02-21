@@ -17,12 +17,34 @@ app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
 
-app.use(
-    cors({
-        origin: '*',
-        methods: ["GET", "POST", "PUT", "DELETE"],
-    })
-);
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (e.g., mobile apps, curl, server-to-server)
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        // In non-production environments, allow all origins for convenience
+        if (process.env.NODE_ENV !== "production") {
+            return callback(null, true);
+        }
+
+        // In production, only allow explicitly configured origins
+        const allowedOrigins = (process.env.CORS_ORIGINS || "")
+            .split(",")
+            .map(o => o.trim())
+            .filter(Boolean);
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE"],
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 

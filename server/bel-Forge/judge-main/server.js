@@ -7,21 +7,19 @@ app.use(express.json());
 app.use(cors({ origin: "*" }));
 
 app.post("/execute", async (req, res) => {
-  const { code, language, input, timeLimit, memoryLimit } = req.body;
-
-  if(timeLimit === undefined) {
-    timeLimit = 1;
-  }
-
-  if(memoryLimit === undefined) {
-    memoryLimit = 256;
-  }
+  const { code, language, input, timeLimit = 1, memoryLimit = 256 } = req.body;
 
   if (!code || !language) {
     return res.status(400).json({ error: "Code and language are required" });
   }
   try {
-    const result = await addJobToQueue(code, language, input, timeLimit, memoryLimit);
+    const result = await addJobToQueue({
+      code,
+      language,
+      input,
+      timeLimit,
+      memoryLimit
+    });
     console.log("Execution Result:", result);
     
     // Always return a consistent response format

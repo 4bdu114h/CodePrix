@@ -4,12 +4,13 @@ const User = require('../models/UserModel');
 
 module.exports = async (req, res) => {
     try {
-        const fetchtime = new Date(Date.now() - 10 * 60 * 1000); // now - 10 mins
+        const now = new Date(); // current time
 
-        // Find all leaderboards where: startTime < fetchtime < endTime + 10 mins
+        // Find all leaderboards where: startTime < now and endTime > now - 10 mins
+        // (i.e., contests that are ongoing or ended within the last 10 minutes)
         const leaderboardsToUpdate = await LeaderBoard.find({
-            startTime: { $lt: fetchtime },
-            endTime: { $gt: new Date(fetchtime.getTime() - 10 * 60 * 1000) },
+            startTime: { $lt: now },
+            endTime: { $gt: new Date(now.getTime() - 10 * 60 * 1000) },
         });
 
         for (const leaderboard of leaderboardsToUpdate) {
@@ -31,23 +32,39 @@ module.exports = async (req, res) => {
             let userIdtoLatestACMap = new Map();
             let userIdToScoreMap = new Map();
 
+            // First pass: collect unique author IDs from submissions
+            for (const submission of allSubmissions) {
+                if (submission.author) {
+                    userIdSet.add(submission.author.toString());
+                }
+            }
+
+            // Fetch all required users in a single query
+            const users = await User.find({ _id: { $in: Array.from(userIdSet) } });
+
+            // Reinitialize maps and userIdSet to only include users that actually exist
+            userIdSet = new Set();
+            for (const user of users) {
+                const userId = user._id.toString();
+                userIdSet.add(userId);
+                userIdToEmailMap.set(userId, user.email);
+                userIdToNameMap.set(userId, user.username);
+                userIdToProblemsSolvedMap.set(userId, []);
+                userIdtoLatestACMap.set(userId, 0);
+                userIdToScoreMap.set(userId, 0);
+            }
+
+            // Second pass: process submissions using pre-fetched user data
             for (const submission of allSubmissions) {
                 const { author, createdAt, status, problem } = submission;
-                const problemId = problem.toString();
+                if (!author) continue;
 
-                // normalize ObjectId → string
+                const problemId = problem.toString();
                 const authorId = author.toString();
 
+                // Skip submissions whose authors are not present in the users collection
                 if (!userIdSet.has(authorId)) {
-                    const user = await User.findById(authorId);
-                    if (!user) continue;
-
-                    userIdSet.add(authorId);
-                    userIdToEmailMap.set(authorId, user.email);
-                    userIdToNameMap.set(authorId, user.username);
-                    userIdToProblemsSolvedMap.set(authorId, []);
-                    userIdtoLatestACMap.set(authorId, 0);
-                    userIdToScoreMap.set(authorId, 0);
+                    continue;
                 }
 
                 if (
@@ -79,9 +96,15 @@ module.exports = async (req, res) => {
                 return b.score - a.score;
             });
 
-            leaderboard.rank_list = newLeaderBoardRankList;
-            leaderboard.last_updated = new Date();
-            await leaderboard.save();
+            await LeaderBoard.findOneAndUpdate(
+                { _id: leaderboard._id },
+                {
+                    $set: {
+                        rank_list: newLeaderBoardRankList,
+                        last_updated: new Date(),
+                    },
+                }
+            );
         }
 
         return res.status(200).json({ message: 'Eligible leaderboards updated successfully' });
