@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Submission = require('../models/Submission');
 const Problem = require('../models/Problem');
 const Contest = require('../models/Contest');
@@ -19,39 +20,55 @@ exports.getSubmission = async (req, res) => {
   }
 };
 
+const SUPPORTED_LANGUAGES = ['cpp', 'java', 'python', 'javascript'];
+const MAX_CODE_LENGTH = 65536; // 64KB
+
 exports.createSubmission = async (req, res) => {
   const { problemId, code, language } = req.body;
   const userId = req.user; // authMiddleware sets req.user = decoded.id
 
+  // Input validation
+  if (!code || typeof code !== 'string' || code.trim().length === 0) {
+    return res.status(400).json({ success: false, error: 'code is required.' });
+  }
+  if (Buffer.byteLength(code, 'utf8') > MAX_CODE_LENGTH) {
+    return res.status(400).json({ success: false, error: `code must not exceed ${MAX_CODE_LENGTH} bytes.` });
+  }
+  if (!language || !SUPPORTED_LANGUAGES.includes(language)) {
+    return res.status(400).json({
+      success: false,
+      error: `language must be one of: ${SUPPORTED_LANGUAGES.join(', ')}.`,
+    });
+  }
+
   try {
-    // Validate problem exists and fetch constraints (timeLimit/memoryLimit when added to Problem schema)
+    // Validate problemId presence and format before any DB I/O
+    if (!problemId || !mongoose.Types.ObjectId.isValid(problemId)) {
+      return res.status(400).json({ success: false, error: 'problemId is required and must be a valid ObjectId.' });
+    }
+
+    // Validate problem exists
     const problem = await Problem.findById(problemId);
     if (!problem) {
       return res.status(404).json({ success: false, error: 'Problem not found.' });
     }
 
-    // Contest time window: submissions only allowed during an active contest
+    // Optional contest time window: look for an active contest but don't reject if none found
     const now = new Date();
     const activeContest = await Contest.findOne({
       problems: problemId,
       startTime: { $lte: now },
       endTime: { $gte: now },
     });
-    if (!activeContest) {
-      return res.status(400).json({
-        success: false,
-        error: 'No active contest for this problem. Submissions are only accepted during the contest window.',
-      });
-    }
 
-    const timeLimit = problem.timeLimit ?? 2000;   // ms, default 2s
-    const memoryLimit = problem.memoryLimit ?? 256000; // KB, default 256MB
+    const timeLimit = 2000;    // ms, default 2s
+    const memoryLimit = 256000; // KB, default 256MB
 
     // 1. Synchronous Database Commit (State: PEND)
     const submission = new Submission({
       user: userId,
       problem: problemId,
-      contest: activeContest._id,
+      contest: activeContest ? activeContest._id : null,
       code,
       language
     });
@@ -72,28 +89,29 @@ exports.createSubmission = async (req, res) => {
       language,
       timeLimit,
       memoryLimit,
-      testCases: problem.testCases || [] // For future full judge: run against each test case
+      testCases: problem.testCases || []
     })
       .then(async (result) => {
+        const judgedAt = new Date();
         // 4. Update Database with Terminal State
         await Submission.findByIdAndUpdate(submission._id, {
           $set: {
             status: result.status,
             'metrics.time': result.executionTime,
             'metrics.memory': result.memoryUsed,
-            failedTestCase: result.failedTestCase || null,
+            failedTestCase: result.failedTestCase ?? null,
             logs: result.logs
           }
         });
 
-        // 5. Leaderboard Service Synchronization (Only on Accepted)
-        if (result.status === 'AC') {
+        // 5. Leaderboard Service Synchronization (Only on Accepted, only when in a contest)
+        if (result.status === 'AC' && activeContest) {
           const LEADERBOARD_URL = process.env.LEADERBOARD_URL || 'http://localhost:5000';
           await axios.post(`${LEADERBOARD_URL}/update-leaderboard`, {
             userId,
             problemId,
             contestId: activeContest._id,
-            timestamp: submission.createdAt // Critical for tie-breaking
+            timestamp: judgedAt // Time when the submission was judged as AC
           }).catch(err => console.error('Leaderboard Sync Failed:', err.message));
         }
       })

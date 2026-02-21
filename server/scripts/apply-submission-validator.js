@@ -30,8 +30,8 @@ const validator = {
       metrics: {
         bsonType: 'object',
         properties: {
-          time: { bsonType: 'int', minimum: 0, maximum: 15000 },
-          memory: { bsonType: 'int', minimum: 0, maximum: 1024000 },
+          time: { bsonType: ['int', 'double'], minimum: 0, maximum: 15000 },
+          memory: { bsonType: ['int', 'double'], minimum: 0, maximum: 1024000 },
         },
       },
       failedTestCase: { bsonType: ['int', 'null'], minimum: 0 },
