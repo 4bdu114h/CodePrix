@@ -11,7 +11,7 @@ router.post("/", protect, async (req, res) => {
     const start = new Date(startTime);
     const end = new Date(endTime);
 
-    if (!start.getTime() || !end.getTime()) {
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       return res.status(400).json({ message: "Invalid startTime or endTime." });
     }
     if (start >= end) {

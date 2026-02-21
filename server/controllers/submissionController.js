@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Submission = require('../models/Submission');
 const Problem = require('../models/Problem');
 const Contest = require('../models/Contest');
@@ -19,7 +20,7 @@ exports.getSubmission = async (req, res) => {
   }
 };
 
-const SUPPORTED_LANGUAGES = ['cpp', 'c', 'java', 'python', 'javascript'];
+const SUPPORTED_LANGUAGES = ['cpp', 'java', 'python', 'javascript'];
 const MAX_CODE_LENGTH = 65536; // 64KB
 
 exports.createSubmission = async (req, res) => {
@@ -30,7 +31,7 @@ exports.createSubmission = async (req, res) => {
   if (!code || typeof code !== 'string' || code.trim().length === 0) {
     return res.status(400).json({ success: false, error: 'code is required.' });
   }
-  if (code.length > MAX_CODE_LENGTH) {
+  if (Buffer.byteLength(code, 'utf8') > MAX_CODE_LENGTH) {
     return res.status(400).json({ success: false, error: `code must not exceed ${MAX_CODE_LENGTH} bytes.` });
   }
   if (!language || !SUPPORTED_LANGUAGES.includes(language)) {
@@ -41,6 +42,11 @@ exports.createSubmission = async (req, res) => {
   }
 
   try {
+    // Validate problemId presence and format before any DB I/O
+    if (!problemId || !mongoose.Types.ObjectId.isValid(problemId)) {
+      return res.status(400).json({ success: false, error: 'problemId is required and must be a valid ObjectId.' });
+    }
+
     // Validate problem exists
     const problem = await Problem.findById(problemId);
     if (!problem) {
