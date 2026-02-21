@@ -19,6 +19,12 @@ const contestSchema = new mongoose.Schema(
     endTime: {
       type: Date,
       required: true,
+      validate: {
+        validator: function (value) {
+          return this.startTime instanceof Date && value instanceof Date && this.startTime < value;
+        },
+        message: "End time must be after start time",
+      },
     },
   },
   { timestamps: true }

@@ -1,17 +1,28 @@
 const express = require("express");
 const router = express.Router();
 const Contest = require("../models/Contest");
+const protect = require("../middleware/authMiddleware");
 
-// Create contest
-router.post("/", async (req, res) => {
+// Create contest (requires authentication)
+router.post("/", protect, async (req, res) => {
   try {
     const { title, problems, startTime, endTime } = req.body;
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+
+    if (!start.getTime() || !end.getTime()) {
+      return res.status(400).json({ message: "Invalid startTime or endTime." });
+    }
+    if (start >= end) {
+      return res.status(400).json({ message: "startTime must be before endTime." });
+    }
 
     const contest = await Contest.create({
       title,
       problems,
-      startTime,
-      endTime,
+      startTime: start,
+      endTime: end,
     });
 
     res.status(201).json(contest);

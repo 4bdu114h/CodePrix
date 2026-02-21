@@ -65,7 +65,8 @@ async function executeCode(job) {
                             parsedError: parsedError
                         }
                     });
-                } console.log("Compilation Successful!");
+                }
+                console.log("Compilation Successful!");
                 runCode(config.execute(outputFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
             });
         } else {
@@ -402,8 +403,8 @@ module.exports = async (payload) => {
                 memoryLimit: memLimitMB,
             });
 
-            const actualOut = (result.output || '').replace(/\r\n/g, '\n').trim();
-            const expected = expectedOut.replace(/\r\n/g, '\n').trim();
+            const actualOut = (result.output || '').replace(/\r\n/g, '\n').trim().split('\n').map(l => l.trimEnd()).join('\n');
+            const expected = expectedOut.replace(/\r\n/g, '\n').trim().split('\n').map(l => l.trimEnd()).join('\n');
 
             const elapsedMs = result.executionTimeMs ?? 0;
             const memoryKB = result.memoryUsedKB ?? 0;
