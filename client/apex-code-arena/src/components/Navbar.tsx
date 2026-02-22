@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Trophy, LayoutDashboard, Code2, Timer, Menu, X, LogOut, Moon, Sun } from "lucide-react";
+import { Trophy, LayoutDashboard, Code2, Timer, Menu, X, LogOut, Moon, Sun, Shield } from "lucide-react";
 import { useState } from "react";
 import { AnimatedFlag } from "@/components/RacingElements";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,7 +16,7 @@ const navItems = [
 const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -53,6 +53,20 @@ const Navbar = () => {
               </Link>
             );
           })}
+          {user && isAdmin && (
+            <Link to="/admin/create-contest" className="relative px-4 py-2 group">
+              <span className={`font-body text-sm font-bold tracking-wide uppercase transition-colors ${location.pathname === '/admin/create-contest' ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+                ⚡ Create Contest
+              </span>
+              {location.pathname === '/admin/create-contest' && (
+                <motion.div
+                  layoutId="nav-underline"
+                  className="absolute bottom-0 left-2 right-2 h-1 bg-primary border border-foreground"
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )}
+            </Link>
+          )}
         </div>
 
         <div className="hidden md:flex items-center gap-3">
@@ -104,7 +118,17 @@ const Navbar = () => {
               <item.icon className="h-4 w-4" />
               {item.label}
             </Link>
-          ))}          <button
+          ))}
+          {user && isAdmin && (
+            <Link
+              to="/admin/create-contest"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-6 py-4 font-body text-sm font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground hover:bg-secondary/30 border-b-2 border-foreground"
+            >
+              <Shield className="h-4 w-4" />
+              Create Contest
+            </Link>
+          )}          <button
             onClick={() => {
               toggleTheme();
               setMobileOpen(false);

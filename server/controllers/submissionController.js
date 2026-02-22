@@ -10,7 +10,7 @@ exports.getSubmission = async (req, res) => {
       .populate('problem', 'title difficulty')
       .select('-code');
     if (!submission) return res.status(404).json({ success: false, error: 'Submission not found.' });
-    if (submission.user.toString() !== req.user.toString()) {
+    if (submission.user.toString() !== req.user.id.toString()) {
       return res.status(403).json({ success: false, error: 'Not authorized to view this submission.' });
     }
     res.json(submission);
@@ -21,9 +21,17 @@ exports.getSubmission = async (req, res) => {
 
 exports.createSubmission = async (req, res) => {
   const { problemId, code, language } = req.body;
-  const userId = req.user; // authMiddleware sets req.user = decoded.id
+  const userId = req.user.id; // authMiddleware sets req.user = decoded (full payload)
 
   try {
+    // Validate inputs
+    if (!problemId || !code || !language) {
+      return res.status(400).json({
+        success: false,
+        error: 'problemId, code, and language are required.'
+      });
+    }
+
     // Validate problem exists and fetch constraints (timeLimit/memoryLimit when added to Problem schema)
     const problem = await Problem.findById(problemId);
     if (!problem) {
@@ -55,7 +63,18 @@ exports.createSubmission = async (req, res) => {
       code,
       language
     });
-    await submission.save();
+
+    try {
+      await submission.save();
+    } catch (saveError) {
+      console.error('Submission save error:', saveError);
+      if (saveError.errors) console.error('Validation errors:', saveError.errors);
+      if (saveError.code) console.error('MongoDB error code:', saveError.code);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to save submission: ${saveError.message}`
+      });
+    }
 
     // 2. Release HTTP Request
     res.status(202).json({
@@ -104,8 +123,14 @@ exports.createSubmission = async (req, res) => {
       });
 
   } catch (error) {
+    console.error('Create submission error:', error);
+    if (error.stack) console.error(error.stack);
+    console.error('Context: problemId=%s userId=%s', problemId, userId);
     if (!res.headersSent) {
-      res.status(500).json({ success: false, error: 'Database transaction failed.' });
+      const message = process.env.NODE_ENV !== 'production'
+        ? error.message
+        : 'Database transaction failed.';
+      res.status(500).json({ success: false, error: message });
     }
   }
 };
