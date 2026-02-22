@@ -1,14 +1,20 @@
 import axios from "axios";
 
 /**
- * Singleton Axios instance configured to route through the Vite proxy.
+ * Singleton Axios instance configured for both development and production.
  *
- * - Base URL `/api/proxy` is rewritten by Vite to `http://localhost:8000/api`
+ * - Dev:  Base URL `/api/proxy` is rewritten by Vite to `http://localhost:8000/api`
+ * - Prod: Base URL is set via `VITE_API_URL` environment variable
  * - Request interceptor auto-attaches JWT from localStorage
- * - Response interceptor handles 401 (zombie token) by clearing auth and redirecting
+ * - Response interceptor handles 401 (zombie token) and 429 (rate limit)
  */
+const baseURL =
+    import.meta.env.MODE === "production"
+        ? import.meta.env.VITE_API_URL
+        : "/api/proxy";
+
 const apiClient = axios.create({
-    baseURL: "/api/proxy",
+    baseURL,
     headers: {
         "Content-Type": "application/json",
     },
@@ -29,20 +35,33 @@ apiClient.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// ── Response Interceptor: Zombie Token Killer ───────────────────────
+// ── Response Interceptor: Zombie Token Killer + Rate Limit Handler ──
 apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            // Step 1: Destroy the dead token
+        const status = error.response?.status;
+
+        if (status === 401) {
+            // Destroy the dead token
             if (typeof window !== "undefined") {
                 localStorage.removeItem("codeprix_token");
                 localStorage.removeItem("codeprix_user");
-
-                // Step 2 & 3: Cancel promise chain + hard redirect to login
                 window.location.href = "/login";
             }
         }
+
+        if (status === 429) {
+            // Fire a custom event so any UI toast system can pick it up
+            if (typeof window !== "undefined") {
+                const message =
+                    error.response?.data?.error ||
+                    "Too many requests. Please slow down.";
+                window.dispatchEvent(
+                    new CustomEvent("rate-limited", { detail: { message } })
+                );
+            }
+        }
+
         return Promise.reject(error);
     }
 );

@@ -2,6 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const { exec, spawn } = require("child_process");
 const os = require("os");
+const crypto = require("crypto");
+
+// Cross-platform Python binary detection
+const PYTHON_CMD = os.platform() === "win32" ? "python" : "python3";
 
 const LANGUAGE_CONFIGS = {
     cpp: {
@@ -17,14 +21,33 @@ const LANGUAGE_CONFIGS = {
     python: {
         extension: "py",
         compile: null,
-        execute: (src) => `python3 "${src}"`,
+        execute: (src) => `${PYTHON_CMD} "${src}"`,
     },
     java: {
         extension: "java",
         compile: (src) => `javac "${src}"`,
         execute: (src) => `java -cp "${path.dirname(src)}" ${path.basename(src, ".java")}`,
+    },
+    javascript: {
+        extension: "js",
+        compile: null,
+        // Route through jail.js sandbox instead of raw node execution
+        execute: (src) => {
+            const jailPath = path.join(__dirname, 'jail.js');
+            return `node --max-old-space-size=256 "${jailPath}" "${src}"`;
+        },
+        jailed: true, // Flag: strip env vars + extra stdout protection
     }
 };
+
+/**
+ * Extracts the public class name from Java source code.
+ * Falls back to "Main" if no public class declaration found.
+ */
+function extractJavaClassName(code) {
+    const match = code.match(/public\s+class\s+([A-Za-z_$][A-Za-z0-9_$]*)/);
+    return match ? match[1] : "Main";
+}
 
 async function executeCode(job) {
     console.log("Worker received job:", job);
@@ -35,58 +58,80 @@ async function executeCode(job) {
     }
 
     const config = LANGUAGE_CONFIGS[language];
-    const execDir = path.join(__dirname, "sandbox", `exec-${Date.now()}`);
+    const execDir = path.join(__dirname, "sandbox", `exec-${crypto.randomUUID()}`);
     fs.mkdirSync(execDir, { recursive: true });
 
-    const sourceFile = path.join(execDir, `code.${config.extension}`);
+    // ── Java class-name extraction ───────────────────────────────────
+    // Java requires the filename to match the public class name exactly.
+    let sourceFileName;
+    if (language === "java") {
+        const className = extractJavaClassName(code);
+        sourceFileName = `${className}.java`;
+    } else {
+        sourceFileName = `code.${config.extension}`;
+    }
+
+    const sourceFile = path.join(execDir, sourceFileName);
     const outputFile = path.join(execDir, "code.exe");
 
     fs.writeFileSync(sourceFile, code);
 
-    return new Promise((resolve, reject) => {
-        if (config.compile) {
-            exec(config.compile(sourceFile, outputFile), (compileError, compileStdout, compileStderr) => {
-                if (compileError) {
-                    cleanup(execDir);
+    // ── Guaranteed cleanup via try/finally ───────────────────────────
+    try {
+        return await new Promise((resolve, reject) => {
+            if (config.compile) {
+                exec(config.compile(sourceFile, outputFile), (compileError, compileStdout, compileStderr) => {
+                    if (compileError) {
+                        // Parse compilation error for line numbers
+                        const parsedError = parseErrorLocation(compileStderr, language);
 
-                    // Parse compilation error for line numbers
-                    const parsedError = parseErrorLocation(compileStderr, language);
-
-                    return reject({
-                        error: "COMPILATION_ERROR",
-                        message: "Code compilation failed",
-                        details: {
-                            stderr: compileStderr.trim(),
-                            stdout: compileStdout.trim(),
-                            exitCode: compileError.code || null,
-                            language: language,
-                            lineNumber: parsedError?.line || null,
-                            column: parsedError?.column || null,
-                            parsedError: parsedError
-                        }
-                    });
-                } console.log("Compilation Successful!");
-                runCode(config.execute(outputFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
-            });
-        } else {
-            runCode(config.execute(sourceFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
-        }
-    });
+                        return reject({
+                            error: "COMPILATION_ERROR",
+                            message: "Code compilation failed",
+                            details: {
+                                stderr: compileStderr.trim(),
+                                stdout: compileStdout.trim(),
+                                exitCode: compileError.code || null,
+                                language: language,
+                                lineNumber: parsedError?.line || null,
+                                column: parsedError?.column || null,
+                                parsedError: parsedError
+                            }
+                        });
+                    }
+                    console.log("Compilation Successful!");
+                    runCode(config.execute(outputFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
+                });
+            } else {
+                runCode(config.execute(sourceFile), execDir, input, timeLimit, memoryLimit, language, resolve, reject);
+            }
+        });
+    } finally {
+        cleanup(execDir);
+    }
 }
 
 function runCode(command, execDir, input, timeLimit, memoryLimit, language, resolve, reject) {
     const startTime = Date.now();
+    const config = LANGUAGE_CONFIGS[language] || {};
 
     // For Windows, use spawn to get better control over the process
     const args = command.split(' ');
     const executable = args[0].replace(/"/g, ''); // Remove quotes
     const processArgs = args.slice(1).map(arg => arg.replace(/"/g, ''));
 
-    const childProcess = spawn(executable, processArgs, {
+    // ── Security: strip env vars for jailed languages ────────────────
+    const spawnOpts = {
         cwd: execDir,
-        stdio: ['pipe', 'pipe', 'pipe']
-    });
+        stdio: ['pipe', 'pipe', 'pipe'],
+    };
+    if (config.jailed) {
+        spawnOpts.env = {}; // No MONGO_URI, JWT_SECRET, etc.
+    }
 
+    const childProcess = spawn(executable, processArgs, spawnOpts);
+
+    const MAX_STDOUT_BYTES = 65536; // 64KB stdout flood cap
     let stdout = '';
     let stderr = '';
     let killed = false;
@@ -114,7 +159,6 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
                                     killed = true;
                                     clearInterval(memoryCheckInterval);
                                     childProcess.kill('SIGKILL');
-                                    cleanup(execDir);
                                     return reject({
                                         error: "MEMORY_LIMIT_EXCEEDED",
                                         message: `Memory limit of ${memoryLimit}MB exceeded`,
@@ -141,7 +185,6 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
             killed = true;
             clearInterval(memoryCheckInterval);
             childProcess.kill('SIGKILL');
-            cleanup(execDir);
             return reject({
                 error: "TIME_LIMIT_EXCEEDED",
                 message: `Time limit of ${timeLimit}s exceeded`,
@@ -156,6 +199,24 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
     // Handle process output
     childProcess.stdout.on('data', (data) => {
         stdout += data.toString();
+        // ── Stdout flood protection ─────────────────────────────────
+        if (stdout.length > MAX_STDOUT_BYTES && !killed) {
+            killed = true;
+            clearTimeout(timeoutHandle);
+            clearInterval(memoryCheckInterval);
+            childProcess.kill('SIGKILL');
+            return reject({
+                error: "RUNTIME_ERROR",
+                message: "Output limit exceeded (64KB). Possible infinite print loop.",
+                details: {
+                    stderr: 'Output Limit Exceeded',
+                    stdout: stdout.substring(0, 2048),
+                    exitCode: null,
+                    executionTimeMs: Date.now() - startTime,
+                    memoryUsedKB: peakMemoryKB,
+                }
+            });
+        }
     });
 
     childProcess.stderr.on('data', (data) => {
@@ -169,7 +230,6 @@ function runCode(command, execDir, input, timeLimit, memoryLimit, language, reso
         clearInterval(memoryCheckInterval);
 
         const executionTimeMs = Date.now() - startTime;
-        cleanup(execDir);
 
         if (code !== 0) {
             // Error handling logic

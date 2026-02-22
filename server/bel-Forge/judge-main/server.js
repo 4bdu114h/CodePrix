@@ -7,23 +7,17 @@ app.use(express.json());
 app.use(cors({ origin: "*" }));
 
 app.post("/execute", async (req, res) => {
-  const { code, language, input, timeLimit, memoryLimit } = req.body;
-
-  if(timeLimit === undefined) {
-    timeLimit = 1;
-  }
-
-  if(memoryLimit === undefined) {
-    memoryLimit = 256;
-  }
+  const { code, language, input } = req.body;
+  const timeLimit = req.body.timeLimit ?? 1;       // seconds
+  const memoryLimit = req.body.memoryLimit ?? 256;  // MB
 
   if (!code || !language) {
     return res.status(400).json({ error: "Code and language are required" });
   }
   try {
-    const result = await addJobToQueue(code, language, input, timeLimit, memoryLimit);
+    const result = await addJobToQueue({ code, language, input, timeLimit, memoryLimit });
     console.log("Execution Result:", result);
-    
+
     // Always return a consistent response format
     if (result.error) {
       // Error case - return detailed error information
@@ -47,7 +41,7 @@ app.post("/execute", async (req, res) => {
     }
   } catch (error) {
     console.error("Execution Failed in API:", error);
-    
+
     // Handle any unexpected errors
     res.status(200).json({
       success: false,

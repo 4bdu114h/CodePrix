@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Play, ChevronDown, Terminal, CheckCircle2, XCircle, AlertTriangle, Zap, Eye, Code2, NotebookPen, ChevronLeft, Clock } from "lucide-react";
+import { Play, ChevronDown, Terminal, CheckCircle2, XCircle, AlertTriangle, Zap, Eye, Code2, NotebookPen, ChevronLeft, Clock, Loader2, Timer, MemoryStick } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { CheckeredFlag } from "@/components/RacingElements";
 import { problems } from "@/lib/mockData";
 import PitCrewAI from "@/components/PitCrewAI";
+import apiClient from "@/lib/apiClient";
+import { encodeSourceCode, LANG_MAP } from "@/lib/submissionCodec";
+import { useToast } from "@/hooks/use-toast";
+import { useSubmissionStatus } from "@/hooks/useSubmissionStatus";
+import type { SubmissionStatus } from "@/hooks/useSubmissionStatus";
 
 const languages = ["C++", "Python", "Java"];
 
@@ -73,8 +78,17 @@ public:
 }`,
 };
 
-type SubmissionState = "idle" | "running" | "accepted" | "wrong" | "error";
+type SubmissionState = "idle" | "running" | "accepted" | "wrong" | "error" | "pending";
 type RunState = "idle" | "running" | "success" | "error";
+
+/** Human-readable labels for system/syntax failure statuses */
+const STATUS_LABELS: Partial<Record<SubmissionStatus, string>> = {
+  CE: "Compilation Error",
+  RE: "Runtime Error",
+  TLE: "Time Limit Exceeded",
+  MLE: "Memory Limit Exceeded",
+  IE: "Internal Error",
+};
 
 const ProblemDetail = () => {
   const { id } = useParams();
@@ -102,16 +116,98 @@ const ProblemDetail = () => {
     return savedTime ? parseInt(savedTime, 10) : 0;
   });
   const [timerOpen, setTimerOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const handleSubmit = () => {
+  // ── Polling Engine ───────────────────────────────────────────────
+  const { submission: polledSubmission, isPolling, error: pollingError } =
+    useSubmissionStatus(submissionId);
+
+  // Diagnostics extracted from the final submission payload
+  const [execTimeMs, setExecTimeMs] = useState<number | null>(null);
+  const [memoryMb, setMemoryMb] = useState<number | null>(null);
+  const [failedTestCase, setFailedTestCase] = useState<number | null>(null);
+  const [terminalLogs, setTerminalLogs] = useState<string>("");
+
+  const handleSubmit = async () => {
+    if (submitting) return; // Prevent rapid-fire duplicates
+    setSubmitting(true);
     setState("running");
     setRunState("idle");
     setRunOutput("");
-    setTimeout(() => {
-      const outcomes: SubmissionState[] = ["accepted", "wrong", "error"];
-      setState(outcomes[Math.floor(Math.random() * outcomes.length)]);
-    }, 2000);
+
+    try {
+      // 1. Unicode-safe Base64 encode
+      const encodedCode = encodeSourceCode(code);
+
+      // 2. Dispatch to backend via Axios singleton (JWT auto-attached)
+      const res = await apiClient.post("/submissions", {
+        code: encodedCode,
+        problemId: id,
+        language: LANG_MAP[lang] || lang.toLowerCase(),
+      });
+
+      // 3. 202 Accepted — store submissionId, transition to pending
+      setSubmissionId(res.data.submissionId);
+      setState("pending");
+      toast({
+        title: "Submission Enqueued",
+        description: `ID: ${res.data.submissionId} — judging in progress.`,
+      });
+    } catch (err: any) {
+      setState("error");
+      const message = err.response?.data?.error || err.message || "Submission failed.";
+      setRunOutput(message);
+      toast({ title: "Submission Failed", description: message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  // ── Submission Status Reactor ────────────────────────────────────
+  // Maps polled backend state → UI state machine
+  useEffect(() => {
+    if (!polledSubmission) return;
+
+    const s = polledSubmission.status;
+
+    if (s === "PEND" || s === "RUN") {
+      setState("pending");
+      return;
+    }
+
+    // Terminal state reached — commit diagnostics
+    if (s === "AC") {
+      setState("accepted");
+      setExecTimeMs(polledSubmission.metrics?.time ?? null);
+      setMemoryMb(polledSubmission.metrics?.memory ?? null);
+    } else if (s === "WA") {
+      setState("wrong");
+      setFailedTestCase(polledSubmission.failedTestCase ?? null);
+    } else {
+      // CE, RE, TLE, MLE, IE
+      setState("error");
+      setTerminalLogs(
+        polledSubmission.logs?.stderr ||
+        polledSubmission.logs?.stdout ||
+        `${STATUS_LABELS[s] || s}: No additional output.`
+      );
+    }
+
+    // Reset submissionId so hook goes dormant
+    setSubmissionId(null);
+    setRunOutput("");
+  }, [polledSubmission]);
+
+  // Surface polling errors to the console
+  useEffect(() => {
+    if (pollingError) {
+      setState("error");
+      setTerminalLogs(`Polling Error: ${pollingError}`);
+      setSubmissionId(null);
+    }
+  }, [pollingError]);
 
   const handleRun = () => {
     setRunState("running");
@@ -147,13 +243,13 @@ const ProblemDetail = () => {
   useEffect(() => {
     const codeKey = `codeprix-code-${id}-${lang}`;
     const savedCode = localStorage.getItem(codeKey);
-    
+
     if (savedCode) {
       setCode(savedCode);
     } else {
       setCode(defaultCode[lang]);
     }
-    
+
     // Reset states when switching problems
     setState("idle");
     setRunState("idle");
@@ -165,7 +261,7 @@ const ProblemDetail = () => {
     if (code && code !== defaultCode[lang]) {
       const codeKey = `codeprix-code-${id}-${lang}`;
       localStorage.setItem(codeKey, code);
-      
+
       // Show saved indicator briefly
       setSavedIndicator(true);
       const timer = setTimeout(() => setSavedIndicator(false), 2000);
@@ -233,11 +329,10 @@ const ProblemDetail = () => {
                 </span>
                 <button
                   onClick={() => setNotesOpen(!notesOpen)}
-                  className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${
-                    notesOpen
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-foreground hover:bg-primary/20"
-                  }`}
+                  className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${notesOpen
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-foreground hover:bg-primary/20"
+                    }`}
                   style={{ boxShadow: "var(--shadow-brutal)" }}
                   title="Add personal notes"
                 >
@@ -246,11 +341,10 @@ const ProblemDetail = () => {
                 </button>
                 <button
                   onClick={() => setTimerOpen(!timerOpen)}
-                  className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${
-                    timerOpen
-                      ? "bg-steel-blue text-primary-foreground"
-                      : "bg-background text-foreground hover:bg-steel-blue/20"
-                  }`}
+                  className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${timerOpen
+                    ? "bg-steel-blue text-primary-foreground"
+                    : "bg-background text-foreground hover:bg-steel-blue/20"
+                    }`}
                   style={{ boxShadow: "var(--shadow-brutal)" }}
                   title="Time spent on this problem"
                 >
@@ -438,19 +532,26 @@ const ProblemDetail = () => {
                 </button>
                 <button
                   onClick={handleSubmit}
-                  disabled={state === "running" || showSolution}
+                  disabled={submitting || state === "running" || state === "pending" || showSolution}
                   className="neo-btn-primary px-5 py-2 text-xs flex items-center gap-2 disabled:opacity-50"
                 >
-                  <Play className="h-3 w-3" />
-                  {state === "running" ? "🔧 Pit Stop..." : "🏁 Submit"}
+                  {submitting || state === "running" ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  {submitting || state === "running"
+                    ? "🔧 Pit Stop..."
+                    : state === "pending"
+                      ? "⏳ Judging..."
+                      : "🏁 Submit"}
                 </button>
                 <button
                   onClick={() => setShowSolution(!showSolution)}
-                  className={`px-5 py-2 text-xs flex items-center gap-2 border-2 border-foreground font-bold transition-colors ${
-                    showSolution
-                      ? "bg-secondary text-foreground"
-                      : "bg-background text-foreground hover:bg-secondary/30"
-                  }`}
+                  className={`px-5 py-2 text-xs flex items-center gap-2 border-2 border-foreground font-bold transition-colors ${showSolution
+                    ? "bg-secondary text-foreground"
+                    : "bg-background text-foreground hover:bg-secondary/30"
+                    }`}
                   style={{ boxShadow: "var(--shadow-brutal)" }}
                 >
                   <Eye className="h-3.5 w-3.5" />
@@ -467,31 +568,30 @@ const ProblemDetail = () => {
                 <div className="flex-1 overflow-hidden">
                   <textarea
                     value={showSolution ? solutionCode[lang] : code}
-                    onChange={(e) => !showSolution && setCode(e.target.value)}
-                    className={`w-full h-full resize-none bg-background p-4 font-mono text-sm text-foreground focus:outline-none border-none disabled:opacity-80 ${
-                      showSolution ? "solution-view" : ""
-                    }`}
+                    onChange={(e) => !showSolution && !submitting && setCode(e.target.value)}
+                    className={`w-full h-full resize-none bg-background p-4 font-mono text-sm text-foreground focus:outline-none border-none disabled:opacity-80 ${showSolution ? "solution-view" : ""
+                      }`}
                     spellCheck={false}
-                    disabled={showSolution}
+                    disabled={showSolution || submitting}
+                    readOnly={state === "pending" || isPolling}
                   />
                 </div>
 
                 {/* Output Console */}
-                <div className={`border-t-2 border-foreground p-4 min-h-[120px] max-h-[200px] overflow-y-auto ${
-                  state === "accepted" ? "bg-neo-green/20" : 
-                  state === "wrong" ? "bg-primary/10" : 
-                  state === "error" ? "bg-secondary/30" : 
-                  runState === "success" ? "bg-accent/20" :
-                  runState === "error" ? "bg-destructive/10" :
-                  "bg-card"
-                }`}>
+                <div className={`border-t-2 border-foreground p-4 min-h-[120px] max-h-[200px] overflow-y-auto ${state === "accepted" ? "bg-neo-green/20" :
+                  state === "wrong" ? "bg-primary/10" :
+                    state === "error" ? "bg-secondary/30" :
+                      runState === "success" ? "bg-accent/20" :
+                        runState === "error" ? "bg-destructive/10" :
+                          "bg-card"
+                  }`}>
                   <div className="flex items-center gap-2 mb-2">
                     <Terminal className="h-4 w-4" />
                     <span className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
                       {runState !== "idle" ? "Code Output" : "Race Control"}
                     </span>
                   </div>
-                  
+
                   {/* Run Output */}
                   {runState === "running" && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
@@ -529,25 +629,101 @@ const ProblemDetail = () => {
                   {runState === "idle" && state === "running" && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
                       <div className="h-3 w-3 bg-secondary border-2 border-foreground animate-pulse-glow" />
-                      <span className="font-mono text-xs font-bold">🔧 Executing in pit lane...</span>
+                      <span className="font-mono text-xs font-bold">🔧 Submitting to pit lane...</span>
                     </motion.div>
                   )}
+                  {/* ── PENDING: Polling in progress ─────────────── */}
+                  {runState === "idle" && state === "pending" && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="font-mono text-xs font-bold">
+                          ⏳ {polledSubmission?.status === "RUN" ? "Executing on sandbox..." : "Submission enqueued — judging in progress"}
+                          {submissionId ? ` (${submissionId})` : ""}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full bg-secondary border border-foreground overflow-hidden">
+                        <motion.div
+                          className="h-full bg-steel-blue"
+                          animate={{ x: ["-100%", "100%"] }}
+                          transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                          style={{ width: "40%" }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ── ACCEPTED: Green success banner with metrics ── */}
                   {runState === "idle" && state === "accepted" && (
-                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-2">
-                      <CheckCircle2 className="h-5 w-5 text-foreground" />
-                      <span className="font-body text-sm font-bold">✅ Accepted — Fastest Lap: 0.8s</span>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="space-y-3"
+                    >
+                      <div className="flex items-center gap-2 border-2 border-foreground bg-neo-green/30 px-4 py-2" style={{ boxShadow: "var(--shadow-brutal)" }}>
+                        <CheckCircle2 className="h-5 w-5 text-foreground" />
+                        <span className="font-display text-sm font-bold">✅ ACCEPTED</span>
+                      </div>
+                      <div className="flex gap-4 font-mono text-xs">
+                        {execTimeMs !== null && (
+                          <div className="flex items-center gap-1.5 border-2 border-foreground bg-background px-3 py-1.5" style={{ boxShadow: "var(--shadow-brutal)" }}>
+                            <Clock className="h-3 w-3" />
+                            <span className="font-bold">{execTimeMs} ms</span>
+                          </div>
+                        )}
+                        {memoryMb !== null && (
+                          <div className="flex items-center gap-1.5 border-2 border-foreground bg-background px-3 py-1.5" style={{ boxShadow: "var(--shadow-brutal)" }}>
+                            <Zap className="h-3 w-3" />
+                            <span className="font-bold">{(memoryMb / 1024).toFixed(2)} MB</span>
+                          </div>
+                        )}
+                      </div>
                     </motion.div>
                   )}
+
+                  {/* ── WRONG ANSWER: Red banner with failed test index ── */}
                   {runState === "idle" && state === "wrong" && (
-                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-2">
-                      <XCircle className="h-5 w-5 text-primary" />
-                      <span className="font-body text-sm font-bold text-primary">❌ Wrong Answer — Check output</span>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="space-y-2"
+                    >
+                      <div className="flex items-center gap-2 border-2 border-foreground bg-primary/20 px-4 py-2" style={{ boxShadow: "var(--shadow-brutal)" }}>
+                        <XCircle className="h-5 w-5 text-primary" />
+                        <span className="font-display text-sm font-bold text-primary">❌ WRONG ANSWER</span>
+                      </div>
+                      {failedTestCase !== null && (
+                        <div className="font-mono text-xs border-2 border-foreground bg-background px-3 py-2" style={{ boxShadow: "var(--shadow-brutal)" }}>
+                          Failed at Test Case <span className="font-bold text-primary">#{failedTestCase}</span>
+                        </div>
+                      )}
                     </motion.div>
                   )}
+
+                  {/* ── SYSTEM / SYNTAX ERROR: Terminal-style log block ── */}
                   {runState === "idle" && state === "error" && (
-                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex items-center gap-2">
-                      <AlertTriangle className="h-5 w-5" />
-                      <span className="font-body text-sm font-bold">⚠️ Runtime Error</span>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5" />
+                        <span className="font-display text-sm font-bold">⚠️ {runOutput || "Execution Error"}</span>
+                      </div>
+                      {terminalLogs && (
+                        <pre
+                          className="font-mono text-xs p-4 overflow-y-auto max-h-[180px] whitespace-pre-wrap"
+                          style={{
+                            background: "#0d0d0d",
+                            color: "#e0e0e0",
+                            border: "2px solid var(--foreground)",
+                            boxShadow: "var(--shadow-brutal)",
+                          }}
+                        >
+                          {terminalLogs}
+                        </pre>
+                      )}
                     </motion.div>
                   )}
                 </div>
@@ -556,7 +732,7 @@ const ProblemDetail = () => {
           </div>
         </div>
       </main>
-      
+
       <PitCrewAI
         problemTitle={problem.title}
         problemDescription="Solve the coding problem shown on the left."
