@@ -7,7 +7,7 @@ const router = express.Router();
 router.get("/profile", protect, (req, res) => {
   res.json({
     message: "Access granted to protected route",
-    userId: req.user,
+    userId: req.user.id,
   });
 });
 

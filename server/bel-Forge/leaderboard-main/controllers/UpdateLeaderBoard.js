@@ -82,6 +82,16 @@ module.exports = async (req, res) => {
             leaderboard.rank_list = newLeaderBoardRankList;
             leaderboard.last_updated = new Date();
             await leaderboard.save();
+
+            // Broadcast updated leaderboard to all connected clients in this contest room
+            const io = req.app.get('io');
+            if (io) {
+                io.to(`leaderboard:${contest_link_code}`).emit('leaderboard-update', {
+                    contest_link_code,
+                    timestamp: Date.now(),
+                    rank_list: newLeaderBoardRankList,
+                });
+            }
         }
 
         return res.status(200).json({ message: 'Eligible leaderboards updated successfully' });

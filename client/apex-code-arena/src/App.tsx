@@ -12,6 +12,7 @@ import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminRoute from "@/components/AdminRoute";
 
 const queryClient = new QueryClient();
 
@@ -57,11 +58,22 @@ const App = () => (
             }
           />
           <Route
-            path="/leaderboard"
+            path="/leaderboard/:contestCode?"
             element={
               <ProtectedRoute>
                 <Leaderboard />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/create-contest"
+            element={
+              <AdminRoute>
+                <div className="min-h-screen bg-background pt-24 text-center">
+                  <h1 className="font-display text-2xl font-bold">🏗️ Create Contest</h1>
+                  <p className="font-body text-muted-foreground mt-2">Coming soon — contest generation engine.</p>
+                </div>
+              </AdminRoute>
             }
           />
           <Route path="*" element={<NotFound />} />

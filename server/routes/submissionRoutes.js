@@ -11,7 +11,7 @@ router.post("/", protect, createSubmission);
 // Get all submissions for logged-in user
 router.get("/my", protect, async (req, res) => {
   try {
-    const submissions = await Submission.find({ user: req.user })
+    const submissions = await Submission.find({ user: req.user.id })
       .populate("problem", "title difficulty");
 
     res.json(submissions);
