@@ -1,7 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const Contest = require("../models/Contest");
+const protect = require("../middleware/authMiddleware");
+const verifyAdmin = require("../middleware/adminMiddleware");
+const { generateContest } = require("../controllers/contestController");
 
+// Admin-only: generate contest via aggregation pipeline
+router.post("/generate", protect, verifyAdmin, generateContest);
 // Create contest
 router.post("/", async (req, res) => {
   try {

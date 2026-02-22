@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Timer, Users, Flag, Lock, Play, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, ChevronDown, NotebookPen } from "lucide-react";
+import { Timer, Users, Flag, Lock, Play, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, ChevronDown, NotebookPen, Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { CheckeredFlag, AnimatedFlag } from "@/components/RacingElements";
 import { contests, type Contest, type ContestProblem } from "@/lib/mockData";
+import apiClient from "@/lib/apiClient";
+import { encodeSourceCode, LANG_MAP } from "@/lib/submissionCodec";
+import { useToast } from "@/hooks/use-toast";
 
 /* ───── Countdown ───── */
 const Countdown = ({ target }: { target: Date }) => {
@@ -52,13 +55,12 @@ const RaceLights = ({ onGo }: { onGo: () => void }) => {
         {[0, 1, 2, 3, 4].map((i) => (
           <motion.div
             key={i}
-            className={`w-10 h-10 border-3 border-foreground transition-all duration-200 rounded-full ${
-              allOut
+            className={`w-10 h-10 border-3 border-foreground transition-all duration-200 rounded-full ${allOut
                 ? "bg-neo-green"
                 : i < lit
-                ? "bg-primary"
-                : "bg-card"
-            }`}
+                  ? "bg-primary"
+                  : "bg-card"
+              }`}
             animate={i < lit && !allOut ? { scale: [1, 1.15, 1] } : allOut ? { scale: [1, 1.3, 1] } : {}}
             transition={{ duration: 0.3 }}
             style={{ boxShadow: (i < lit && !allOut) ? "3px 3px 0 hsl(350 100% 40%)" : allOut ? "3px 3px 0 hsl(140 70% 35%)" : "3px 3px 0 hsl(230 40% 8%)" }}
@@ -85,11 +87,13 @@ const ContestProblemView = ({
   raceActive,
   onBack,
   onSolve,
+  contestId,
 }: {
   problem: ContestProblem;
   raceActive: boolean;
   onBack: () => void;
   onSolve: (id: number) => void;
+  contestId?: number;
 }) => {
   const [code, setCode] = useState("");
   const [state, setState] = useState<"idle" | "running" | "accepted" | "wrong" | "error">("idle");
@@ -100,21 +104,38 @@ const ContestProblemView = ({
     return savedNotes || "";
   });
   const [notesOpen, setNotesOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
     setState("running");
-    setTimeout(() => {
-      // 60% chance of accepted for demo
-      const rand = Math.random();
-      if (rand < 0.6) {
-        setState("accepted");
-        onSolve(problem.id);
-      } else if (rand < 0.85) {
-        setState("wrong");
-      } else {
-        setState("error");
-      }
-    }, 1500);
+
+    try {
+      const encodedCode = encodeSourceCode(code);
+
+      const res = await apiClient.post("/submissions", {
+        code: encodedCode,
+        problemId: problem.id,
+        language: LANG_MAP[lang] || lang.toLowerCase(),
+        ...(contestId ? { contestId } : {}),
+      });
+
+      // 202 Accepted — mark as accepted for demo flow
+      setState("accepted");
+      onSolve(problem.id);
+      toast({
+        title: "Submission Accepted",
+        description: `ID: ${res.data.submissionId} — enqueued for judging.`,
+      });
+    } catch (err: any) {
+      setState("error");
+      const message = err.response?.data?.error || err.message || "Submission failed.";
+      toast({ title: "Submission Failed", description: message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Auto-save notes to localStorage whenever they change
@@ -138,11 +159,10 @@ const ContestProblemView = ({
             {problem.solved && <span className="neo-badge bg-neo-green text-foreground border-foreground text-[10px]">✅ Solved</span>}
             <button
               onClick={() => setNotesOpen(!notesOpen)}
-              className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${
-                notesOpen
+              className={`px-3 py-1 text-[10px] flex items-center gap-1.5 border-2 border-foreground font-bold transition-colors flex-shrink-0 ${notesOpen
                   ? "bg-primary text-primary-foreground"
                   : "bg-background text-foreground hover:bg-primary/20"
-              }`}
+                }`}
               style={{ boxShadow: "var(--shadow-brutal)" }}
               title="Add personal notes"
             >
@@ -216,24 +236,27 @@ const ContestProblemView = ({
             </div>
             <button
               onClick={handleSubmit}
-              disabled={state === "running" || problem.solved}
+              disabled={submitting || state === "running" || problem.solved}
               className="neo-btn-primary px-5 py-2 text-xs flex items-center gap-2 disabled:opacity-50"
             >
-              <Play className="h-3 w-3" />
-              {state === "running" ? "🔧 Pit Stop..." : problem.solved ? "✅ Solved" : !raceActive ? "📊 View Results" : "🏁 Submit"}
+              {submitting || state === "running" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+              {submitting || state === "running" ? "🔧 Pit Stop..." : problem.solved ? "✅ Solved" : !raceActive ? "📊 View Results" : "🏁 Submit"}
             </button>
           </div>
           <textarea
             value={code}
-            onChange={(e) => raceActive && setCode(e.target.value)}
-            readOnly={!raceActive}
-            className={`flex-1 min-h-[200px] resize-none bg-background p-4 font-mono text-sm text-foreground focus:outline-none ${!raceActive ? "opacity-60 cursor-not-allowed" : ""}`}
+            onChange={(e) => raceActive && !submitting && setCode(e.target.value)}
+            readOnly={!raceActive || submitting}
+            className={`flex-1 min-h-[200px] resize-none bg-background p-4 font-mono text-sm text-foreground focus:outline-none ${!raceActive || submitting ? "opacity-60 cursor-not-allowed" : ""}`}
             placeholder="// Write your solution here..."
             spellCheck={false}
           />
-          <div className={`border-t-2 border-foreground p-4 ${
-            state === "accepted" ? "bg-neo-green/20" : state === "wrong" ? "bg-primary/10" : state === "error" ? "bg-secondary/30" : "bg-card"
-          }`}>
+          <div className={`border-t-2 border-foreground p-4 ${state === "accepted" ? "bg-neo-green/20" : state === "wrong" ? "bg-primary/10" : state === "error" ? "bg-secondary/30" : "bg-card"
+            }`}>
             {state === "idle" && <p className="font-mono text-xs text-muted-foreground">Submit to see results...</p>}
             {state === "running" && (
               <div className="flex items-center gap-2">
@@ -341,9 +364,8 @@ const Contests = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.1 }}
-                    className={`neo-card p-6 ${
-                      contest.status === "active" ? "bg-neo-green/10 border-foreground" : "bg-background"
-                    }`}
+                    className={`neo-card p-6 ${contest.status === "active" ? "bg-neo-green/10 border-foreground" : "bg-background"
+                      }`}
                   >
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
@@ -417,9 +439,8 @@ const Contests = () => {
                   <ArrowLeft className="h-4 w-4" />
                 </button>
                 <h1 className="font-display text-xl font-bold">{enteredContest.title}</h1>
-                <span className={`neo-badge text-[10px] ${
-                  isRaceActive(enteredContest) ? "bg-neo-green text-foreground border-foreground" : "bg-muted text-muted-foreground border-foreground"
-                }`}>
+                <span className={`neo-badge text-[10px] ${isRaceActive(enteredContest) ? "bg-neo-green text-foreground border-foreground" : "bg-muted text-muted-foreground border-foreground"
+                  }`}>
                   {isRaceActive(enteredContest) ? "🟢 RACE LIVE" : "🏁 RACE CLOSED"}
                 </span>
               </div>
@@ -452,6 +473,7 @@ const Contests = () => {
                     raceActive={isRaceActive(enteredContest)}
                     onBack={() => setSelectedProblem(null)}
                     onSolve={handleSolve}
+                    contestId={enteredContest.id}
                   />
                 ) : (
                   <motion.div key="problem-list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
