@@ -1,7 +1,7 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const protect = require("../middleware/authMiddleware");
-const { createSubmission, getSubmission } = require("../controllers/submissionController");
+const { createSubmission, getSubmission, runSubmission } = require("../controllers/submissionController");
 const Submission = require("../models/Submission");
 
 const router = express.Router();
@@ -16,8 +16,18 @@ const submissionLimiter = rateLimit({
   message: { error: "Execution engine cooling down. Please wait 10 seconds." },
 });
 
-// Submit solution (protected + rate-limited) — delegates to bel-Forge via controller
+// Submit solution (protected + rate-limited) — delegates to algoforge-judge via controller
 router.post("/", protect, submissionLimiter, createSubmission);
+
+// Run code with optional input (no submission record) — for "Run" button
+const runLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many run requests. Please wait a minute." },
+});
+router.post("/run", protect, runLimiter, runSubmission);
 
 // Get all submissions for logged-in user
 router.get("/my", protect, async (req, res) => {

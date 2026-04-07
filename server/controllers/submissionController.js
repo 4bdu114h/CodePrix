@@ -1,8 +1,12 @@
+const mongoose = require('mongoose');
+const axios = require('axios');
 const Submission = require('../models/Submission');
 const Problem = require('../models/Problem');
 const Contest = require('../models/Contest');
-const { addJobToQueue } = require('../bel-Forge/judge-main/queue');
-const axios = require('axios'); // For communicating with the standalone Leaderboard app
+const { addJobToQueue, judgePool } = require('../services/judgeClient');
+const { computeLeaderboard } = require('./leaderboardController');
+
+const LEADERBOARD_URL = process.env.LEADERBOARD_URL || 'http://localhost:5001';
 
 // ── Constants ────────────────────────────────────────────────────────
 const MAX_CODE_BYTES = 65536; // 64 KB hard limit
@@ -26,6 +30,42 @@ function decodeBase64Code(b64String) {
 function truncate(str, maxLen = MAX_LOG_CHARS) {
   if (!str || str.length <= maxLen) return str || '';
   return str.slice(0, maxLen - 20) + '\n... [truncated]';
+}
+
+/**
+ * Parse timeLimit from DB (may be string like "2s" or number in ms).
+ * Always returns milliseconds.
+ */
+function parseTimeLimit(raw) {
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string') {
+    const match = raw.match(/([\d.]+)\s*(s|ms)?/i);
+    if (match) {
+      const val = parseFloat(match[1]);
+      const unit = (match[2] || 's').toLowerCase();
+      return unit === 'ms' ? val : val * 1000;
+    }
+  }
+  return 2000; // default 2s
+}
+
+/**
+ * Parse memoryLimit from DB (may be string like "256 MB" or number in KB).
+ * Always returns kilobytes.
+ */
+function parseMemoryLimit(raw) {
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string') {
+    const match = raw.match(/([\d.]+)\s*(KB|MB|GB)?/i);
+    if (match) {
+      const val = parseFloat(match[1]);
+      const unit = (match[2] || 'MB').toUpperCase();
+      if (unit === 'GB') return val * 1024 * 1024;
+      if (unit === 'MB') return val * 1024;
+      return val; // KB
+    }
+  }
+  return 256000; // default 256 MB
 }
 
 // ── Controllers ──────────────────────────────────────────────────────
@@ -78,10 +118,20 @@ exports.createSubmission = async (req, res) => {
     }
 
     // ── 3. Problem existence & constraint fetch ─────────────────────
-    const problem = await Problem.findById(problemId);
+    // Resolve numeric problemId (e.g. "12") to ObjectId via problemNumber
+    let resolvedProblemId = problemId;
+    if (!mongoose.Types.ObjectId.isValid(problemId)) {
+      const num = parseInt(String(problemId), 10);
+      if (!isNaN(num)) {
+        const p = await Problem.findOne({ problemId: num });
+        if (p) resolvedProblemId = p._id;
+      }
+    }
+    const problem = await Problem.findById(resolvedProblemId);
     if (!problem) {
       return res.status(404).json({ success: false, error: 'Problem not found.' });
     }
+    const problemIdForSubmission = problem._id;
 
     // ── 4. Contest temporal boundary validation ──────────────────────
     let resolvedContest = null;
@@ -101,7 +151,7 @@ exports.createSubmission = async (req, res) => {
       }
       // Verify the problem belongs to this contest
       const problemInContest = resolvedContest.problems.some(
-        (pid) => pid.toString() === problemId.toString()
+        (pid) => pid.toString() === problemIdForSubmission.toString()
       );
       if (!problemInContest) {
         return res.status(400).json({
@@ -110,28 +160,23 @@ exports.createSubmission = async (req, res) => {
         });
       }
     } else {
-      // No explicit contestId: auto-detect active contest for this problem
+      // No explicit contestId: auto-detect active contest for this problem, or allow practice mode
       resolvedContest = await Contest.findOne({
-        problems: problemId,
+        problems: problemIdForSubmission,
         startTime: { $lte: now },
         endTime: { $gte: now },
       });
-      if (!resolvedContest) {
-        return res.status(400).json({
-          success: false,
-          error: 'No active contest for this problem. Submissions are only accepted during the contest window.',
-        });
-      }
+      // If no active contest, allow practice submission (contest: null)
     }
 
-    const timeLimit = problem.timeLimit ?? 2000;       // ms, default 2s
-    const memoryLimit = problem.memoryLimit ?? 256000;  // KB, default 256MB
+    const timeLimit = parseTimeLimit(problem.timeLimit);        // ms
+    const memoryLimit = parseMemoryLimit(problem.memoryLimit);   // KB
 
     // ── 5. Synchronous Database Commit (State: PEND) ────────────────
     const submission = new Submission({
       user: userId,
-      problem: problemId,
-      contest: resolvedContest._id,
+      problem: problemIdForSubmission,
+      contest: resolvedContest ? resolvedContest._id : null,
       code: decodedCode,
       language
     });
@@ -163,7 +208,8 @@ exports.createSubmission = async (req, res) => {
       language,
       timeLimit,
       memoryLimit,
-      testCases: problem.testCases || []
+      testCases: problem.testCases || [],
+      executionMode: problem.executionMode || 'RAW',
     })
       .then(async (result) => {
         // Update Database with Terminal State (truncate logs)
@@ -178,15 +224,20 @@ exports.createSubmission = async (req, res) => {
           }
         });
 
-        // Leaderboard Service Synchronization (Only on Accepted)
-        if (result.status === 'AC') {
-          const LEADERBOARD_URL = process.env.LEADERBOARD_URL || 'http://localhost:5000';
-          await axios.post(`${LEADERBOARD_URL}/update-leaderboard`, {
-            userId,
-            problemId,
-            contestId: resolvedContest._id,
-            timestamp: submission.createdAt // Critical for tie-breaking
-          }).catch(err => console.error('Leaderboard Sync Failed:', err.message));
+        // Leaderboard Broadcast (Only on Accepted, and only if contest exists)
+        if (result.status === 'AC' && resolvedContest) {
+          try {
+            const payload = await computeLeaderboard(resolvedContest._id);
+            const { io } = require('../server');
+            io.to(resolvedContest._id.toString()).emit('leaderboard-update', payload);
+          } catch (lbErr) {
+            console.error('Leaderboard broadcast failed:', lbErr.message);
+          }
+
+          // Trigger algoforge-leaderboard service update (fire-and-forget)
+          axios.post(`${LEADERBOARD_URL}/update-leaderboard`, {}).catch((err) => {
+            console.error('Algoforge leaderboard update failed:', err.message);
+          });
         }
       })
       .catch(async (err) => {
@@ -210,5 +261,71 @@ exports.createSubmission = async (req, res) => {
         : 'Database transaction failed.';
       res.status(500).json({ success: false, error: message });
     }
+  }
+};
+
+/**
+ * Run code with a single test input (no submission record). Used by "Run" button.
+ * Body: { code (Base64), language, input? }
+ */
+exports.runSubmission = async (req, res) => {
+  const { code, language, input, expectedOutput } = req.body;
+  try {
+    if (!code || !language) {
+      return res.status(400).json({
+        success: false,
+        error: 'code and language are required.',
+      });
+    }
+    let decodedCode;
+    try {
+      decodedCode = decodeBase64Code(code);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: 'Malformed Base64 payload. Could not decode source code.',
+      });
+    }
+    if (Buffer.byteLength(decodedCode, 'utf-8') > MAX_CODE_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: `Source code exceeds the ${MAX_CODE_BYTES}-byte limit.`,
+      });
+    }
+    const validLanguages = ['cpp', 'c', 'java', 'python', 'javascript'];
+    const lang = language.toLowerCase();
+    if (!validLanguages.includes(lang)) {
+      return res.status(400).json({
+        success: false,
+        error: `Unsupported language: ${language}. Use one of: ${validLanguages.join(', ')}.`,
+      });
+    }
+    const runPayload = {
+      runOnly: true,
+      submissionId: null,
+      code: decodedCode,
+      language: lang,
+      timeLimit: 5000,
+      memoryLimit: 256000,
+      testCases: [{ input: typeof input === 'string' ? input : '', output: '' }],
+    };
+    const result = await judgePool.run(runPayload);
+    if (!result.runOnly) {
+      return res.status(500).json({ success: false, error: 'Run endpoint returned full judge result.' });
+    }
+    return res.json({
+      success: result.status === 'OK',
+      status: result.status,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      executionTimeMs: result.executionTimeMs ?? 0,
+      expectedOutput: typeof expectedOutput === 'string' ? expectedOutput : '',
+    });
+  } catch (error) {
+    console.error('Run submission error:', error);
+    return res.status(500).json({
+      success: false,
+      error: process.env.NODE_ENV !== 'production' ? error.message : 'Execution failed.',
+    });
   }
 };
