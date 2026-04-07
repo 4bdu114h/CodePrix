@@ -11,6 +11,7 @@ import Contests from "./pages/Contests";
 import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import CreateContest from "./pages/CreateContest";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 
@@ -69,10 +70,7 @@ const App = () => (
             path="/admin/create-contest"
             element={
               <AdminRoute>
-                <div className="min-h-screen bg-background pt-24 text-center">
-                  <h1 className="font-display text-2xl font-bold">🏗️ Create Contest</h1>
-                  <p className="font-body text-muted-foreground mt-2">Coming soon — contest generation engine.</p>
-                </div>
+                <CreateContest />
               </AdminRoute>
             }
           />

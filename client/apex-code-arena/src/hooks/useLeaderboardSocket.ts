@@ -3,34 +3,38 @@ import { io, Socket } from "socket.io-client";
 
 export interface RankEntry {
     user: {
+        _id: string;
         email: string;
         name: string;
     };
     score: number;
-    latestAC: string | number;
+    latestAC: string | null;
     problemsSolvedIds: string[];
 }
 
-const LEADERBOARD_SERVER_URL = "http://localhost:5001";
+const SOCKET_URL =
+    import.meta.env.VITE_SOCKET_URL || "http://localhost:8000";
 
 /**
  * Custom hook for real-time leaderboard data via Socket.IO.
  *
- * - Connects directly to the leaderboard service (not through Vite proxy)
+ * - Connects to the main backend server (shared HTTP + WS on same port)
  * - Joins the contest-specific room on connect
  * - Replaces local state entirely on each update (no incremental merge)
+ * - Stale-packet rejection: drops payloads with timestamp <= last rendered
  * - Cleans up on unmount to prevent ghost connections
  */
-export const useLeaderboardSocket = (contestLinkCode: string) => {
+export const useLeaderboardSocket = (contestId: string) => {
     const [rankList, setRankList] = useState<RankEntry[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef<Socket | null>(null);
+    const lastTimestampRef = useRef<number>(0);
 
     useEffect(() => {
-        if (!contestLinkCode) return;
+        if (!contestId) return;
 
-        // Initialize TCP handshake — direct to port 5001, bypassing Vite proxy
-        const socket: Socket = io(LEADERBOARD_SERVER_URL, {
+        // Initialize TCP handshake
+        const socket: Socket = io(SOCKET_URL, {
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
         });
@@ -41,14 +45,19 @@ export const useLeaderboardSocket = (contestLinkCode: string) => {
         socket.on("connect", () => {
             setIsConnected(true);
             // Subscribe to the contest-specific room
-            socket.emit("join-contest", contestLinkCode);
+            socket.emit("join-contest", contestId);
         });
 
-        // Core telemetry listener — overwrite local state with authoritative server state
+        // Core listener — overwrite local state with authoritative server state
+        // Stale-packet rejection: only accept if timestamp is newer
         socket.on(
             "leaderboard-update",
             (data: { rank_list: RankEntry[]; timestamp: number }) => {
-                setRankList(data.rank_list);
+                if (data.timestamp > lastTimestampRef.current) {
+                    lastTimestampRef.current = data.timestamp;
+                    setRankList(data.rank_list);
+                }
+                // Otherwise silently drop the stale packet
             }
         );
 
@@ -61,8 +70,9 @@ export const useLeaderboardSocket = (contestLinkCode: string) => {
             socket.removeAllListeners();
             socket.disconnect();
             socketRef.current = null;
+            lastTimestampRef.current = 0;
         };
-    }, [contestLinkCode]); // Re-run if user switches to a different contest
+    }, [contestId]); // Re-run if user switches to a different contest
 
     return { rankList, isConnected };
 };

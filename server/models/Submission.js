@@ -51,6 +51,6 @@ const submissionSchema = new mongoose.Schema(
 // Indexes for common query patterns
 submissionSchema.index({ user: 1, createdAt: -1 });
 submissionSchema.index({ problem: 1, status: 1 });
-submissionSchema.index({ contest: 1, user: 1 });
+submissionSchema.index({ contest: 1, status: 1, createdAt: 1 });
 
 module.exports = mongoose.model("Submission", submissionSchema);

@@ -43,11 +43,14 @@ router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
     // ── Admin Intercept ─────────────────────────────────────────────
-    // Compare against env-backed admin credentials BEFORE hitting MongoDB
+    // Compare against env-backed admin credentials BEFORE hitting MongoDB.
+    // Support both ADMIN_USERNAME and ADMIN_EMAIL (same value in .env is fine).
+    const adminUsername = process.env.ADMIN_USERNAME;
     const adminEmail = process.env.ADMIN_EMAIL;
     const adminPassword = process.env.ADMIN_PASSWORD;
+    const isAdminIdentity = (adminUsername && email === adminUsername) || (adminEmail && email === adminEmail);
 
-    if (adminEmail && adminPassword && email === adminEmail) {
+    if (adminPassword && isAdminIdentity) {
       // Timing-safe password comparison to mitigate timing attacks
       const inputBuf = Buffer.from(password || "");
       const adminBuf = Buffer.from(adminPassword);

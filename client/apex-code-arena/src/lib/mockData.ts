@@ -1,16 +1,156 @@
-export const problems = [
-  { id: 1, title: "Two Sum", difficulty: "Easy" as const, category: "Arrays", solved: true, acceptance: 78 },
-  { id: 2, title: "Reverse Linked List", difficulty: "Easy" as const, category: "Linked Lists", solved: true, acceptance: 85 },
-  { id: 3, title: "Valid Parentheses", difficulty: "Easy" as const, category: "Stacks", solved: false, acceptance: 72 },
-  { id: 4, title: "Longest Substring", difficulty: "Medium" as const, category: "Strings", solved: true, acceptance: 45 },
-  { id: 5, title: "Binary Tree Level Order", difficulty: "Medium" as const, category: "Trees", solved: false, acceptance: 52 },
-  { id: 6, title: "Merge Intervals", difficulty: "Medium" as const, category: "Arrays", solved: false, acceptance: 48 },
-  { id: 7, title: "LRU Cache", difficulty: "Hard" as const, category: "Design", solved: false, acceptance: 32 },
-  { id: 8, title: "Median of Two Sorted Arrays", difficulty: "Hard" as const, category: "Arrays", solved: false, acceptance: 25 },
-  { id: 9, title: "Regular Expression Matching", difficulty: "Hard" as const, category: "DP", solved: false, acceptance: 28 },
-  { id: 10, title: "Container With Most Water", difficulty: "Medium" as const, category: "Two Pointers", solved: true, acceptance: 55 },
-  { id: 11, title: "3Sum", difficulty: "Medium" as const, category: "Arrays", solved: false, acceptance: 42 },
-  { id: 12, title: "Climbing Stairs", difficulty: "Easy" as const, category: "DP", solved: true, acceptance: 88 },
+/** Sample input/output for RUN (diagnostic) only. Used for "Your Output vs Expected" comparison. */
+export type ProblemExample = { input: string; output: string; explanation?: string };
+
+export const problems: Array<{
+  id: number;
+  title: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  category: string;
+  solved: boolean;
+  acceptance: number;
+  description: string;
+  examples?: ProblemExample[];
+  constraints?: string[];
+}> = [
+  {
+    id: 1,
+    title: "Two Sum",
+    difficulty: "Easy",
+    category: "Arrays",
+    solved: true,
+    acceptance: 78,
+    description:
+      'Given an array of integers `nums` and an integer `target`, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.',
+    examples: [{ input: "2 7 11 15\n9", output: "[0,1]", explanation: "nums[0] + nums[1] = 2 + 7 = 9" }],
+    constraints: ["2 ≤ nums.length ≤ 10⁴", "-10⁹ ≤ nums[i] ≤ 10⁹", "Only one valid answer exists."],
+  },
+  {
+    id: 2,
+    title: "Reverse Linked List",
+    difficulty: "Easy",
+    category: "Linked Lists",
+    solved: true,
+    acceptance: 85,
+    description: "Given the head of a singly linked list, reverse the list, and return the reversed list.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 3,
+    title: "Valid Parentheses",
+    difficulty: "Easy",
+    category: "Stacks",
+    solved: false,
+    acceptance: 72,
+    description:
+      'Given a string s containing just the characters \'(\', \')\', \'{\', \'}\', \'[\' and \']\', determine if the input string is valid. An input string is valid if: open brackets are closed by the same type of brackets, and open brackets are closed in the correct order.',
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 4,
+    title: "Longest Substring",
+    difficulty: "Medium",
+    category: "Strings",
+    solved: true,
+    acceptance: 45,
+    description: "Given a string s, find the length of the longest substring without repeating characters.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 5,
+    title: "Binary Tree Level Order",
+    difficulty: "Medium",
+    category: "Trees",
+    solved: false,
+    acceptance: 52,
+    description: "Given the root of a binary tree, return the level order traversal of its nodes' values.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 6,
+    title: "Merge Intervals",
+    difficulty: "Medium",
+    category: "Arrays",
+    solved: false,
+    acceptance: 48,
+    description: "Given an array of intervals where intervals[i] = [starti, endi], merge all overlapping intervals.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 7,
+    title: "LRU Cache",
+    difficulty: "Hard",
+    category: "Design",
+    solved: false,
+    acceptance: 32,
+    description:
+      "Design a data structure that follows the constraints of a Least Recently Used (LRU) cache. Implement the LRUCache class.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 8,
+    title: "Median of Two Sorted Arrays",
+    difficulty: "Hard",
+    category: "Arrays",
+    solved: false,
+    acceptance: 25,
+    description: "Given two sorted arrays nums1 and nums2 of size m and n respectively, return the median of the two sorted arrays.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 9,
+    title: "Regular Expression Matching",
+    difficulty: "Hard",
+    category: "DP",
+    solved: false,
+    acceptance: 28,
+    description:
+      "Given an input string s and a pattern p, implement regular expression matching with support for '.' and '*' where '.' matches any single character and '*' matches zero or more of the preceding element.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 10,
+    title: "Container With Most Water",
+    difficulty: "Medium",
+    category: "Two Pointers",
+    solved: true,
+    acceptance: 55,
+    description:
+      "You are given an integer array height of length n. There are n vertical lines drawn such that the two endpoints of the ith line are (i, 0) and (i, height[i]). Find two lines that together with the x-axis form a container that holds the most water.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 11,
+    title: "3Sum",
+    difficulty: "Medium",
+    category: "Arrays",
+    solved: false,
+    acceptance: 42,
+    description:
+      "Given an integer array nums, return all the triplets [nums[i], nums[j], nums[k]] such that i != j, i != k, and j != k, and nums[i] + nums[j] + nums[k] == 0. The solution set must not contain duplicate triplets.",
+    examples: [],
+    constraints: [],
+  },
+  {
+    id: 12,
+    title: "Climbing Stairs",
+    difficulty: "Easy",
+    category: "DP",
+    solved: true,
+    acceptance: 88,
+    description:
+      "You are climbing a staircase. It takes n steps to reach the top. Each time you can either climb 1 or 2 steps. In how many distinct ways can you climb to the top?",
+    examples: [{ input: "3", output: "3", explanation: "Three ways: 1+1+1, 1+2, 2+1" }],
+    constraints: ["1 ≤ n ≤ 45"],
+  },
 ];
 
 export const leaderboardData = [

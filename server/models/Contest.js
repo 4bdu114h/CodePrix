@@ -20,6 +20,12 @@ const contestSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    registeredUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );

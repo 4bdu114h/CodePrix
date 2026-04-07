@@ -1,0 +1,14 @@
+{
+    "rewrites": [
+        {
+            "source": "/api/proxy/:path*",
+            "destination": "https://your-vps-domain.com/api/:path*"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "/index.html"
+        }
+    ]
+}
